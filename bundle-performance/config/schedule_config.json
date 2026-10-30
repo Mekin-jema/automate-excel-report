@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "run_time": "08:00",
+  "date_mode": "yesterday",
+  "data_source": "duckdb",
+  "sender_email": "Mekin.Jemal@safaricom.et",
+  "to_emails": "Kalkidan.Gero@safaricom.et; Eden.Taddie@safaricom.et; Ruth.Tenadam@safaricom.et; Amit.Chandiramani@safaricom.et",
+  "cc_emails": "Lulae.Kassahun@safaricom.et; Kibrom.Hadush@safaricom.et; Betelhem.Girma@safaricom.et; Dagim.Hailu@safaricom.et",
+  "send_email": false,
+  "attach_excel": true,
+  "attach_pdf": true,
+  "last_run_timestamp": "2026-10-30 10:16:42",
+  "last_run_status": "SUCCESS"
+}

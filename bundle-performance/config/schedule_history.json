@@ -1,0 +1,14 @@
+[
+  {
+    "timestamp": "2026-10-30 10:16:42",
+    "trigger": "CLI",
+    "reporting_period": "20261029 - 20261029",
+    "data_source": "DuckDB (Sample Mode)",
+    "status": "SUCCESS",
+    "email_sent": false,
+    "excel_file": "Bundle_Performance_20261029_20261029.xlsx",
+    "pdf_file": "Bundle_Performance_20261029_20261029.pdf",
+    "message": "Successfully generated report (54 purchases, 18 usage records). Email skipped (disabled in config).",
+    "duration_sec": 1.82
+  }
+]

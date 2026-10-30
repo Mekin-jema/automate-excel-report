@@ -1,0 +1,9 @@
+oracledb\
+pandas \
+numpy\
+python-dotenv\
+streamlit\
+plotly\
+openpyxl\
+reportlab\
+pywin32 \
