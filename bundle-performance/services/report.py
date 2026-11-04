@@ -9,13 +9,20 @@ Generates the exact multi-tab executive Excel report:
 - TRAFFIC (Traffic in MB by bundle with category subtotals)
 - BUNDLE PURCHASE (Raw SQL purchases dataset)
 - TRAFFIC_DATA (Raw SQL usage dataset)
+- calculations (Formula-linked dashboard series referencing raw source tabs)
 And generates a styled PDF summary report.
 """
 
 from datetime import datetime
 from pathlib import Path
 import openpyxl
-from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
+from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.legend import Legend
+from openpyxl.chart.marker import Marker
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import CharacterProperties, Paragraph as DrawingParagraph, ParagraphProperties, RichTextProperties
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -32,28 +39,28 @@ REPORT_DIR.mkdir(parents=True, exist_ok=True)
 # 18 Target Bundles specification matching Excel template
 BUNDLE_SPECS = [
     # Gize+
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_1HR", "category": "Gize +", "price": 12, "validity": "Night"},
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_2HR", "category": "Gize +", "price": 18, "validity": "Night"},
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_DAY_1HR", "category": "Gize +", "price": 25, "validity": "Day"},
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_DAY_2HR", "category": "Gize +", "price": 45, "validity": "Day"},
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_PEAK_1HR", "category": "Gize +", "price": 45, "validity": "Peak"},
-    {"name": "CBU_TIMEBASED_UNLTD_DATA_PEAK_2HR", "category": "Gize +", "price": 75, "validity": "Peak"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_1HR", "display_name": "Gize+ Night 1 Hour", "category": "Gize +", "price": 12, "validity": "Night"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_2HR", "display_name": "Gize+ Night 2 Hours", "category": "Gize +", "price": 18, "validity": "Night"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_DAY_1HR", "display_name": "Gize+ Day 1 Hour", "category": "Gize +", "price": 25, "validity": "Day"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_DAY_2HR", "display_name": "Gize+ Day 2 Hours", "category": "Gize +", "price": 45, "validity": "Day"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_PEAK_1HR", "display_name": "Gize+ Peak 1 Hour", "category": "Gize +", "price": 45, "validity": "Peak"},
+    {"name": "CBU_TIMEBASED_UNLTD_DATA_PEAK_2HR", "display_name": "Gize+ Peak 2 Hours", "category": "Gize +", "price": 75, "validity": "Peak"},
     # Daily Unlimited
-    {"name": "DAILY_UNLTD_D_18GB_FUP", "category": "Daily Unlimited", "price": 135, "validity": "Day"},
-    {"name": "CBU_UNLTD_FUP_D_18GB_130B_MP_DAILY_OF_LOCATION", "category": "Daily Unlimited", "price": 160, "validity": "Day"},
-    {"name": "CBU_UNLTD_FUP_D_18GB_160B_DAILY_OF_LOCATION", "category": "Daily Unlimited", "price": 160, "validity": "Day"},
+    {"name": "DAILY_UNLTD_D_18GB_FUP", "display_name": "Daily Unlimited 18GB - Standard", "category": "Daily Unlimited", "price": 135, "validity": "Day"},
+    {"name": "CBU_UNLTD_FUP_D_18GB_130B_MP_DAILY_OF_LOCATION", "display_name": "Daily Unlimited 18GB - Partner", "category": "Daily Unlimited", "price": 160, "validity": "Day"},
+    {"name": "CBU_UNLTD_FUP_D_18GB_160B_DAILY_OF_LOCATION", "display_name": "Daily Unlimited 18GB - Location", "category": "Daily Unlimited", "price": 160, "validity": "Day"},
     # Weekly Unlimited
-    {"name": "WEEKLY_UNLTD_D_70GB_FUP", "category": "Weekly Unlimited", "price": 850, "validity": " 1 Week"},
-    {"name": "CBU_UNLTD_FUP_D_70GB_800B_MP_WEEKLY_OF_LOCATION", "category": "Weekly Unlimited", "price": 1000, "validity": " 1 Week"},
-    {"name": "CBU_UNLTD_FUP_D_70GB_1000B_WEEKLY_OF_LOCATION", "category": "Weekly Unlimited", "price": 1000, "validity": " 1 Week"},
+    {"name": "WEEKLY_UNLTD_D_70GB_FUP", "display_name": "Weekly Unlimited 70GB - Standard", "category": "Weekly Unlimited", "price": 850, "validity": " 1 Week"},
+    {"name": "CBU_UNLTD_FUP_D_70GB_800B_MP_WEEKLY_OF_LOCATION", "display_name": "Weekly Unlimited 70GB - Partner", "category": "Weekly Unlimited", "price": 1000, "validity": " 1 Week"},
+    {"name": "CBU_UNLTD_FUP_D_70GB_1000B_WEEKLY_OF_LOCATION", "display_name": "Weekly Unlimited 70GB - Location", "category": "Weekly Unlimited", "price": 1000, "validity": " 1 Week"},
     # Monthly Unlimited
-    {"name": "MONTHLY_UNLTD_D_300GB_FUP", "category": "Monthly Unlimited", "price": 2750, "validity": "30 Day"},
-    {"name": "CBU_UNLTD_FUP_D_300GB_2640B_MP_MONTHLY_OF_LOCATION", "category": "Monthly Unlimited", "price": 3300, "validity": "30 Day"},
-    {"name": "CBU_UNLTD_FUP_D_300GB_3300B_MONTHLY_OF_LOCATION", "category": "Monthly Unlimited", "price": 3300, "validity": "30 Day"},
+    {"name": "MONTHLY_UNLTD_D_300GB_FUP", "display_name": "Monthly Unlimited 300GB - Standard", "category": "Monthly Unlimited", "price": 2750, "validity": "30 Day"},
+    {"name": "CBU_UNLTD_FUP_D_300GB_2640B_MP_MONTHLY_OF_LOCATION", "display_name": "Monthly Unlimited 300GB - Partner", "category": "Monthly Unlimited", "price": 3300, "validity": "30 Day"},
+    {"name": "CBU_UNLTD_FUP_D_300GB_3300B_MONTHLY_OF_LOCATION", "display_name": "Monthly Unlimited 300GB - Location", "category": "Monthly Unlimited", "price": 3300, "validity": "30 Day"},
     # Wullo / Mata
-    {"name": "EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP", "category": "Wullo  Packages", "price": 60, "validity": "Day"},
-    {"name": "NIGHT_UNLTD_D_5GB_FUP", "category": "Wullo  Packages", "price": 30, "validity": "Night"},
-    {"name": "EBU_DATA_WULLO_75GB_MONTHLY", "category": "Wullo  Packages", "price": 1000, "validity": "Monthly"},
+    {"name": "EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP", "display_name": "Wullo 5GB Off-Peak Daily", "category": "Wullo  Packages", "price": 60, "validity": "Day"},
+    {"name": "NIGHT_UNLTD_D_5GB_FUP", "display_name": "Mata 5GB Night", "category": "Wullo  Packages", "price": 30, "validity": "Night"},
+    {"name": "EBU_DATA_WULLO_75GB_MONTHLY", "display_name": "Wullo 75GB Monthly", "category": "Wullo  Packages", "price": 1000, "validity": "Monthly"},
 ]
 
 HEADER_FILL = PatternFill(start_color="C0E4F5", end_color="C0E4F5", fill_type="solid")
@@ -87,8 +94,54 @@ def parse_date_key(d) -> datetime:
     return datetime.today()
 
 
-def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_date: str, end_date: str):
+def display_bundle_name(name: str) -> str:
+    normalized = clean_bundle_name(name)
+    return next((bundle["display_name"] for bundle in BUNDLE_SPECS if bundle["name"] == normalized), "Other bundle")
+
+
+def _dashboard_purchase_formula(metric, day_ref=None, category_ref=None, bundle_ref=None, start_key=None, end_key=None):
+    criteria = []
+    if day_ref:
+        criteria.extend(["'BUNDLE PURCHASE'!$A:$A", day_ref])
+    else:
+        criteria.extend([
+            "'BUNDLE PURCHASE'!$A:$A", f'">="&{start_key}',
+            "'BUNDLE PURCHASE'!$A:$A", f'"<="&{end_key}',
+        ])
+    if category_ref:
+        criteria.extend(["'BUNDLE PURCHASE'!$B:$B", category_ref])
+    if bundle_ref:
+        criteria.extend(["'BUNDLE PURCHASE'!$C:$C", bundle_ref])
+    criteria.extend(["'BUNDLE PURCHASE'!$E:$E", f'"{metric}"'])
+    return "=SUMIFS('BUNDLE PURCHASE'!$F:$F," + ",".join(criteria) + ")"
+
+
+def _dashboard_traffic_formula(day_ref=None, bundle_ref=None, start_key=None, end_key=None):
+    criteria = []
+    if day_ref:
+        criteria.extend(["'TRAFFIC_DATA'!$B:$B", day_ref])
+    else:
+        criteria.extend([
+            "'TRAFFIC_DATA'!$B:$B", f'">="&{start_key}',
+            "'TRAFFIC_DATA'!$B:$B", f'"<="&{end_key}',
+        ])
+    if bundle_ref:
+        criteria.extend(["'TRAFFIC_DATA'!$C:$C", bundle_ref])
+    criteria.extend(["'TRAFFIC_DATA'!$D:$D", '"USAGE"'])
+    return "=SUMIFS('TRAFFIC_DATA'!$E:$E," + ",".join(criteria) + ")"
+
+
+def add_dashboard_sheet(
+    wb,
+    purchases: pd.DataFrame,
+    usage: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    sample_source_date: str | None = None,
+):
     ws = wb.create_sheet("Dashboard", 0)
+    calc_ws = wb.create_sheet("calculations")
+    calc_ws.sheet_view.showGridLines = False
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 85
     ws.freeze_panes = "B6"
@@ -103,7 +156,7 @@ def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_
 
     ws.merge_cells("B2:P3")
     title = ws["B2"]
-    title.value = "BUNDLE PURCHASE PERFORMANCE"
+    title.value = "BUNDLE PURCHASE | PERFORMANCE PULSE"
     title.font = Font(name="Aptos Display", size=22, bold=True, color="FFFFFF")
     title.fill = PatternFill("solid", fgColor="006341")
     title.alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -112,34 +165,42 @@ def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_
             cell.fill = PatternFill("solid", fgColor="006341")
 
     ws.merge_cells("B4:P4")
-    ws["B4"] = f"SAFARICOM ETHIOPIA  |  REPORTING WINDOW: {start_date} - {end_date}"
+    start_label = parse_date_key(start_date).strftime("%d %b %Y")
+    end_label = parse_date_key(end_date).strftime("%d %b %Y")
+    ws["B4"] = f"SAFARICOM ETHIOPIA  |  {start_label} - {end_label}  |  SOURCE-LINKED"
     ws["B4"].font = Font(name="Aptos", size=10, bold=True, color="006341")
-    ws["B4"].alignment = Alignment(vertical="center")
-
-    purchase_values = purchases.copy()
-    if not purchase_values.empty:
-        purchase_values["VALUE"] = pd.to_numeric(purchase_values["VALUE"], errors="coerce").fillna(0)
-
-    def metric_total(code):
-        if purchase_values.empty:
-            return 0.0
-        return float(purchase_values.loc[purchase_values["METRIC"].astype(str) == code, "VALUE"].sum())
-
-    total_revenue = metric_total("C.REVENUE")
-    total_subscribers = metric_total("A.SUBS")
-    total_quantity = metric_total("B.QUANTITY")
-    total_mb = float(pd.to_numeric(usage.get("VALUE", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
-    total_gb = total_mb / 1024
-    effective_rate = total_revenue / total_gb if total_gb else 0.0
+    ws["B4"].alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
 
     cards = [
-        (2, 4, "TOTAL REVENUE", total_revenue, '#,##0.00 "ETB"'),
-        (5, 7, "BUNDLE SUBSCRIBER COUNT", total_subscribers, "#,##0"),
-        (8, 10, "PURCHASE QUANTITY", total_quantity, "#,##0"),
-        (11, 13, "DATA TRAFFIC", total_gb, '#,##0.0 "GB"'),
-        (14, 16, "EFFECTIVE RATE", effective_rate, '#,##0.00 "ETB/GB"'),
+        (2, 4, "TOTAL REVENUE", "Revenue", '#,##0.00 "ETB"'),
+        (5, 7, "SUBSCRIBERS", "Subscribers", "#,##0"),
+        (8, 10, "PURCHASES", "Quantity", "#,##0"),
+        (11, 13, "TRAFFIC", "Traffic", '#,##0.0 "GB"'),
+        (14, 16, "EFFECTIVE RATE", "Rate", '#,##0.00 "ETB/GB"'),
     ]
-    for first_col, last_col, label, value, number_format in cards:
+    start_key = int(parse_date_key(start_date).strftime("%Y%m%d"))
+    end_key = int(parse_date_key(end_date).strftime("%Y%m%d"))
+    report_dates = list(pd.date_range(parse_date_key(start_date), parse_date_key(end_date), freq="D"))
+    if not report_dates:
+        report_dates = [parse_date_key(start_date)]
+    week_groups = {}
+    for report_date in report_dates:
+        iso_year, iso_week, _ = report_date.isocalendar()
+        week_groups.setdefault((iso_year, iso_week), []).append(report_date)
+    weekly_periods = [
+        (week_key, min(days), max(days))
+        for week_key, days in sorted(week_groups.items())
+    ]
+    data_start_row = 46
+    data_end_row = data_start_row + len(report_dates) - 1
+    kpi_formulas = {
+        "Revenue": f"=SUM('calculations'!$C${data_start_row}:$C${data_end_row})",
+        "Subscribers": f"=SUM('calculations'!$D${data_start_row}:$D${data_end_row})",
+        "Quantity": f"=SUM('calculations'!$E${data_start_row}:$E${data_end_row})",
+        "Traffic": f"=SUM('calculations'!$F${data_start_row}:$F${data_end_row})",
+        "Rate": "=IFERROR(B7/K7,0)",
+    }
+    for first_col, last_col, label, metric_key, number_format in cards:
         ws.merge_cells(start_row=6, start_column=first_col, end_row=6, end_column=last_col)
         ws.merge_cells(start_row=7, start_column=first_col, end_row=8, end_column=last_col)
         for row in range(6, 9):
@@ -150,9 +211,9 @@ def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_
         label_cell = ws.cell(6, first_col)
         label_cell.value = label
         label_cell.font = Font(name="Aptos", size=9, bold=True, color="42665A")
-        label_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        label_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False, shrink_to_fit=True)
         value_cell = ws.cell(7, first_col)
-        value_cell.value = value
+        value_cell.value = kpi_formulas[metric_key]
         value_cell.number_format = number_format
         value_cell.font = Font(name="Aptos Display", size=17, bold=True, color="006341")
         value_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -160,102 +221,352 @@ def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_
     ws.merge_cells("B10:P10")
     ws["B10"] = "Subscriber counts are distinct within each bundle and summed across bundles; purchase quantity is not transaction count."
     ws["B10"].font = Font(name="Aptos", size=9, italic=True, color="64748B")
+    if sample_source_date:
+        ws.merge_cells("B11:P11")
+        ws["B11"] = f"SAMPLE DATA: Values are from {sample_source_date} and re-dated to the requested reporting day."
+        ws["B11"].font = Font(name="Aptos", size=9, bold=True, color="9A3412")
 
     trend_header = 45
-    for col, value in enumerate(["Date", "Revenue (ETB)", "Purchase Quantity"], start=2):
-        ws.cell(trend_header, col, value)
+    calc_headers = ["Date", "Revenue (ETB)", "Bundle Subscribers", "Purchase Quantity", "Traffic (GB)"]
+    for col, value in enumerate(calc_headers, start=2):
+        calc_ws.cell(trend_header, col, value)
+    for col, value in enumerate(["Category", "Revenue (ETB)"], start=7):
+        calc_ws.cell(trend_header, col, value)
+    for col, value in enumerate(["Bundle", "Revenue (ETB)", "Rank"], start=10):
+        calc_ws.cell(trend_header, col, value)
+    for col, value in enumerate(["Top Bundle", "Revenue (ETB)"], start=14):
+        calc_ws.cell(trend_header, col, value)
+    for col, value in enumerate(["Traffic Bundle", "Traffic (GB)", "Rank"], start=17):
+        calc_ws.cell(trend_header, col, value)
+    for col, value in enumerate(["Top Traffic Bundle", "Traffic (GB)"], start=21):
+        calc_ws.cell(trend_header, col, value)
 
-    daily_totals = {}
-    if not purchase_values.empty:
-        for row in purchase_values.itertuples(index=False):
-            day = parse_date_key(getattr(row, "ID_DATE")).date()
-            key = (day, str(getattr(row, "METRIC")))
-            daily_totals[key] = daily_totals.get(key, 0.0) + float(getattr(row, "VALUE") or 0.0)
+    section_titles = [
+        ("B43:F43", "DAILY PERFORMANCE"),
+        ("G43:H43", "REVENUE BY CATEGORY"),
+        ("J43:L43", "BUNDLE REVENUE RANKING"),
+        ("N43:O43", "TOP REVENUE BUNDLES"),
+        ("Q43:S43", "BUNDLE TRAFFIC RANKING"),
+        ("U43:V43", "TOP TRAFFIC BUNDLES"),
+        ("W43:AA43", "WEEK-ON-WEEK PERFORMANCE"),
+    ]
+    for cell_range, title_text in section_titles:
+        calc_ws.merge_cells(cell_range)
+        title_cell = calc_ws[cell_range.split(":")[0]]
+        title_cell.value = title_text
+        title_cell.font = Font(name="Aptos", size=10, bold=True, color="FFFFFF")
+        title_cell.fill = PatternFill("solid", fgColor="006341")
+        title_cell.alignment = Alignment(vertical="center", wrap_text=True)
+        for row in calc_ws[cell_range]:
+            for cell in row:
+                cell.fill = PatternFill("solid", fgColor="006341")
 
-    chart_dates = sorted({parse_date_key(k).date() for k in purchases["ID_DATE"]}) if not purchases.empty else [parse_date_key(start_date).date()]
-    if not chart_dates:
-        chart_dates = [parse_date_key(start_date).date()]
-    for row_idx, day in enumerate(chart_dates, start=trend_header + 1):
-        ws.cell(row_idx, 2, datetime.combine(day, datetime.min.time()))
-        ws.cell(row_idx, 2).number_format = "d-mmm"
-        ws.cell(row_idx, 3, daily_totals.get((day, "C.REVENUE"), 0.0))
-        ws.cell(row_idx, 4, daily_totals.get((day, "B.QUANTITY"), 0.0))
+    calc_ws.sheet_view.showGridLines = False
+    calc_ws.sheet_view.zoomScale = 85
+    calc_ws.freeze_panes = "B46"
+    calc_ws.row_dimensions[43].height = 25
+    calc_ws.row_dimensions[trend_header].height = 34
+    for column, width in {
+        "A": 3, "B": 14, "C": 18, "D": 22, "E": 20, "F": 16,
+        "G": 28, "H": 18, "I": 3, "J": 38, "K": 18, "L": 12,
+        "M": 3, "N": 38, "O": 18, "P": 3, "Q": 38, "R": 18,
+        "S": 12, "T": 3, "U": 38, "V": 18,
+        "W": 32, "X": 18, "Y": 18, "Z": 18, "AA": 18,
+    }.items():
+        calc_ws.column_dimensions[column].width = width
 
-    revenue_data = purchase_values[
-        purchase_values["METRIC"].astype(str) == "C.REVENUE"
-    ].copy() if not purchase_values.empty else pd.DataFrame()
-    if not revenue_data.empty:
-        revenue_data["BUNDLE_NAME"] = revenue_data["BUNDLE_NAME"].map(clean_bundle_name)
-        category_totals = revenue_data.groupby("BUNDLE_CATEGORY", dropna=False)["VALUE"].sum().sort_values(ascending=False)
-        bundle_totals = revenue_data.groupby("BUNDLE_NAME")["VALUE"].sum().sort_values(ascending=False).head(10)
-    else:
-        category_totals = pd.Series({"No data": 0.0})
-        bundle_totals = pd.Series({"No data": 0.0})
+    for column, value in enumerate(["Reporting Week", "Revenue (ETB)", "WoW Revenue Change", "Purchase Quantity", "Traffic (GB)"], start=23):
+        calc_ws.cell(trend_header, column, value)
 
-    for col, value in enumerate(["Bundle Category", "Revenue (ETB)"], start=6):
-        ws.cell(trend_header, col, value)
-    for row_idx, (category, value) in enumerate(category_totals.items(), start=trend_header + 1):
-        ws.cell(row_idx, 6, str(category) if pd.notna(category) else "Uncategorized")
-        ws.cell(row_idx, 7, float(value))
+    for row_idx, report_date in enumerate(report_dates, start=trend_header + 1):
+        calc_ws.cell(row_idx, 2, report_date.to_pydatetime())
+        calc_ws.cell(row_idx, 2).number_format = "d-mmm"
+        day_ref = f'VALUE(TEXT($B{row_idx},"yyyymmdd"))'
+        calc_ws.cell(row_idx, 3, _dashboard_purchase_formula("C.REVENUE", day_ref=day_ref))
+        calc_ws.cell(row_idx, 4, _dashboard_purchase_formula("A.SUBS", day_ref=day_ref))
+        calc_ws.cell(row_idx, 5, _dashboard_purchase_formula("B.QUANTITY", day_ref=day_ref))
+        calc_ws.cell(row_idx, 6, _dashboard_traffic_formula(day_ref=day_ref) + "/1024")
 
-    for col, value in enumerate(["Bundle", "Revenue (ETB)"], start=9):
-        ws.cell(trend_header, col, value)
-    for row_idx, (bundle, value) in enumerate(bundle_totals.items(), start=trend_header + 1):
-        ws.cell(row_idx, 9, bundle)
-        ws.cell(row_idx, 10, float(value))
+    weekly_start_row = trend_header + 1
+    for week_index, (week_key, week_start, week_end) in enumerate(weekly_periods):
+        row_idx = weekly_start_row + week_index
+        start_key = int(week_start.strftime("%Y%m%d"))
+        end_key = int(week_end.strftime("%Y%m%d"))
+        calc_ws.cell(row_idx, 23, f"{week_key[0]}-W{week_key[1]:02d} ({week_start:%d %b} - {week_end:%d %b})")
+        calc_ws.cell(row_idx, 24, _dashboard_purchase_formula("C.REVENUE", start_key=start_key, end_key=end_key))
+        calc_ws.cell(row_idx, 25, "BASELINE" if week_index == 0 else f"=IFERROR(X{row_idx}/X{row_idx - 1}-1,0)")
+        calc_ws.cell(row_idx, 26, _dashboard_purchase_formula("B.QUANTITY", start_key=start_key, end_key=end_key))
+        calc_ws.cell(row_idx, 27, _dashboard_traffic_formula(start_key=start_key, end_key=end_key) + "/1024")
+        calc_ws.cell(row_idx, 24).number_format = '#,##0.00 "ETB"'
+        calc_ws.cell(row_idx, 25).number_format = "0.0%;[Red]-0.0%"
+        calc_ws.cell(row_idx, 26).number_format = "#,##0"
+        calc_ws.cell(row_idx, 27).number_format = '#,##0.0 "GB"'
 
-    for col in [2, 3, 4, 6, 7, 9, 10]:
-        cell = ws.cell(trend_header, col)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="006341")
-    ws.merge_cells("B43:D43")
-    ws["B43"] = "DAILY PERFORMANCE"
-    ws.merge_cells("F43:G43")
-    ws["F43"] = "REVENUE BY CATEGORY"
-    ws.merge_cells("I43:J43")
-    ws["I43"] = "TOP BUNDLES BY REVENUE"
-    for cell_ref in ("B43", "F43", "I43"):
-        ws[cell_ref].font = Font(bold=True, color="006341")
+    purchase_categories = sorted(set(purchases.get("BUNDLE_CATEGORY", pd.Series(dtype=str)).dropna().astype(str)))
+    bundle_names = sorted(set(purchases.get("BUNDLE_NAME", pd.Series(dtype=str)).dropna().astype(str)))
+    traffic_names = sorted(set(usage.get("BUNDLE_NAME", pd.Series(dtype=str)).dropna().astype(str)))
+    if not purchase_categories:
+        purchase_categories = ["No data"]
+    if not bundle_names:
+        bundle_names = [bundle["name"] for bundle in BUNDLE_SPECS]
+    if not traffic_names:
+        traffic_names = [bundle["name"] for bundle in BUNDLE_SPECS]
 
-    def add_chart(chart, data_col, category_col, title_text, anchor, color, max_row):
-        chart.add_data(Reference(ws, min_col=data_col, min_row=trend_header, max_row=max_row), titles_from_data=True)
-        chart.set_categories(Reference(ws, min_col=category_col, min_row=trend_header + 1, max_row=max_row))
+    dimension_start = trend_header + 1
+    for row_idx, category in enumerate(purchase_categories, start=dimension_start):
+        calc_ws.cell(row_idx, 7, category)
+        calc_ws.cell(row_idx, 8, _dashboard_purchase_formula(
+            "C.REVENUE", category_ref=f"$G{row_idx}", start_key=start_key, end_key=end_key
+        ))
+
+    for row_idx, bundle_name in enumerate(bundle_names, start=dimension_start):
+        calc_ws.cell(row_idx, 10, bundle_name)
+        calc_ws.cell(row_idx, 11, _dashboard_purchase_formula(
+            "C.REVENUE", bundle_ref=f"$J{row_idx}", start_key=start_key, end_key=end_key
+        ))
+        calc_ws.cell(row_idx, 12, f"=RANK(K{row_idx},$K${dimension_start}:$K${dimension_start + len(bundle_names) - 1},0)+COUNTIF($K${dimension_start}:K{row_idx},K{row_idx})-1")
+
+    top_bundle_start = dimension_start
+    for row_idx in range(top_bundle_start, top_bundle_start + min(10, len(bundle_names))):
+        calc_ws.cell(row_idx, 14, f'=IFERROR(INDEX($J${dimension_start}:$J${dimension_start + len(bundle_names) - 1},MATCH(ROWS(N${top_bundle_start}:N{row_idx}),$L${dimension_start}:$L${dimension_start + len(bundle_names) - 1},0)),"")')
+        calc_ws.cell(row_idx, 15, f"=IFERROR(INDEX($K${dimension_start}:$K${dimension_start + len(bundle_names) - 1},MATCH(ROWS(O${top_bundle_start}:O{row_idx}),$L${dimension_start}:$L${dimension_start + len(bundle_names) - 1},0)),0)")
+
+    for row_idx, bundle_name in enumerate(traffic_names, start=dimension_start):
+        calc_ws.cell(row_idx, 17, bundle_name)
+        calc_ws.cell(row_idx, 18, _dashboard_traffic_formula(
+            bundle_ref=f"$Q{row_idx}", start_key=start_key, end_key=end_key
+        ) + "/1024")
+        calc_ws.cell(row_idx, 19, f"=RANK(R{row_idx},$R${dimension_start}:$R${dimension_start + len(traffic_names) - 1},0)+COUNTIF($R${dimension_start}:R{row_idx},R{row_idx})-1")
+
+    for row_idx in range(dimension_start, dimension_start + min(10, len(traffic_names))):
+        calc_ws.cell(row_idx, 21, f'=IFERROR(INDEX($Q${dimension_start}:$Q${dimension_start + len(traffic_names) - 1},MATCH(ROWS(U${dimension_start}:U{row_idx}),$S${dimension_start}:$S${dimension_start + len(traffic_names) - 1},0)),"")')
+        calc_ws.cell(row_idx, 22, f"=IFERROR(INDEX($R${dimension_start}:$R${dimension_start + len(traffic_names) - 1},MATCH(ROWS(V${dimension_start}:V{row_idx}),$S${dimension_start}:$S${dimension_start + len(traffic_names) - 1},0)),0)")
+
+    for row in calc_ws.iter_rows(min_row=trend_header, max_row=max(dimension_start + len(bundle_names), dimension_start + len(traffic_names)), min_col=2, max_col=22):
+        for cell in row:
+            if cell.value is not None:
+                cell.font = Font(name="Aptos", size=9, color="24332D")
+                if cell.row == trend_header:
+                    cell.font = Font(name="Aptos", size=9, bold=True, color="FFFFFF")
+                    cell.fill = PatternFill("solid", fgColor="006341")
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+    for row_idx in range(dimension_start, max(dimension_start + len(bundle_names), dimension_start + len(traffic_names))):
+        for col_idx in (3, 8, 11, 15, 18, 22):
+            calc_ws.cell(row_idx, col_idx).number_format = "#,##0.00"
+        for col_idx in (4, 5, 12, 19):
+            calc_ws.cell(row_idx, col_idx).number_format = "#,##0"
+        for col_idx in (10, 14, 17, 21):
+            calc_ws.cell(row_idx, col_idx).alignment = Alignment(vertical="center", wrap_text=True)
+
+    data_end_row = trend_header + len(report_dates)
+    kpi_formulas.update({
+        "Revenue": f"=SUM('calculations'!$C${dimension_start}:$C${data_end_row})",
+        "Subscribers": f"=SUM('calculations'!$D${dimension_start}:$D${data_end_row})",
+        "Quantity": f"=SUM('calculations'!$E${dimension_start}:$E${data_end_row})",
+        "Traffic": f"=SUM('calculations'!$F${dimension_start}:$F${data_end_row})",
+    })
+    for first_col, last_col, _, metric_key, _ in cards:
+        ws.cell(7, first_col).value = kpi_formulas[metric_key]
+
+    callouts = [
+        ("B12:F12", "LEADING REVENUE CATEGORY", "B13:F13", f'=IFERROR(INDEX(calculations!$G${dimension_start}:$G${dimension_start + len(purchase_categories) - 1},MATCH(MAX(calculations!$H${dimension_start}:$H${dimension_start + len(purchase_categories) - 1}),calculations!$H${dimension_start}:$H${dimension_start + len(purchase_categories) - 1},0)),"No data")'),
+        ("G12:K12", "TOP REVENUE BUNDLE", "G13:K13", f"=calculations!N{dimension_start}"),
+        ("L12:P12", "AVERAGE DAILY REVENUE", "L13:P13", f"=IFERROR(B7/COUNTA(calculations!$B${dimension_start}:$B${data_end_row}),0)"),
+    ]
+    for label_range, label, value_range, formula in callouts:
+        ws.merge_cells(label_range)
+        ws.merge_cells(value_range)
+        label_cell = ws[label_range.split(":")[0]]
+        label_cell.value = label
+        label_cell.font = Font(name="Aptos", size=8, bold=True, color="9A6B00")
+        label_cell.alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
+        value_cell = ws[value_range.split(":")[0]]
+        value_cell.value = formula
+        value_cell.font = Font(name="Aptos", size=11, bold=True, color="006341")
+        value_cell.alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
+        if label == "AVERAGE DAILY REVENUE":
+            value_cell.number_format = '#,##0.00 "ETB"'
+
+    def add_chart(
+        chart,
+        data_col,
+        category_col,
+        title_text,
+        anchor,
+        color,
+        first_row,
+        last_row,
+        doughnut=False,
+        x_axis_title=None,
+        y_axis_title=None,
+    ):
+        chart.add_data(Reference(calc_ws, min_col=data_col, min_row=trend_header, max_row=last_row), titles_from_data=True)
+        chart.set_categories(Reference(calc_ws, min_col=category_col, min_row=first_row, max_row=last_row))
         chart.title = title_text
+        if not doughnut:
+            chart.x_axis.title = x_axis_title
+            chart.y_axis.title = y_axis_title
         chart.style = 10
-        chart.height = 8.5
-        chart.width = 15.5
-        chart.legend = None
-        chart.series[0].graphicalProperties.solidFill = color
-        chart.series[0].graphicalProperties.line.solidFill = color
+        chart.height = 7.4
+        chart.width = 13.5
+        if doughnut:
+            chart.holeSize = 58
+            chart.varyColors = True
+            chart.legend = Legend()
+            chart.legend.position = "r"
+            chart.dataLabels = DataLabelList()
+            chart.dataLabels.showPercent = True
+            chart.dataLabels.showVal = False
+            chart.dataLabels.showCatName = False
+            chart.dataLabels.showSerName = False
+            chart.dataLabels.showLeaderLines = True
+            chart.dataLabels.txPr = RichText(
+                bodyPr=RichTextProperties(),
+                p=[
+                    DrawingParagraph(
+                        pPr=ParagraphProperties(defRPr=CharacterProperties(solidFill="FFFFFF", sz=900)),
+                        endParaRPr=CharacterProperties(solidFill="FFFFFF", sz=900),
+                    )
+                ],
+            )
+        else:
+            chart.legend = None
+        if chart.series and isinstance(chart, LineChart):
+            chart.series[0].marker = Marker(symbol="circle", size=8)
+            chart.series[0].graphicalProperties.line.width = 26000
+            if len(report_dates) == 1:
+                chart.dataLabels = DataLabelList()
+                chart.dataLabels.showVal = True
+                chart.dataLabels.showCatName = False
+                chart.dataLabels.showSerName = False
+        if chart.series and isinstance(chart, BarChart) and chart.type == "col" and len(report_dates) == 1:
+            chart.dataLabels = DataLabelList()
+            chart.dataLabels.showVal = True
+            chart.dataLabels.showCatName = False
+            chart.dataLabels.showSerName = False
+        if not doughnut and chart.series:
+            chart.series[0].graphicalProperties.solidFill = color
+            chart.series[0].graphicalProperties.line.solidFill = color
         ws.add_chart(chart, anchor)
 
-    trend_end = trend_header + len(chart_dates)
-    revenue_chart = LineChart()
-    add_chart(revenue_chart, 3, 2, "Daily Revenue (ETB)", "B12", "00A859", trend_end)
+    daily_end_row = trend_header + len(report_dates)
+    category_end_row = dimension_start + len(purchase_categories) - 1
+    top_bundle_end_row = dimension_start + min(10, len(bundle_names)) - 1
+    top_traffic_end_row = dimension_start + min(10, len(traffic_names)) - 1
+    add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)")
     quantity_chart = BarChart()
     quantity_chart.type = "col"
-    add_chart(quantity_chart, 4, 2, "Daily Purchase Quantity", "I12", "F6C445", trend_end)
-    category_end = trend_header + len(category_totals)
-    category_chart = BarChart()
-    category_chart.type = "bar"
-    add_chart(category_chart, 7, 6, "Revenue by Category", "B29", "00A859", category_end)
-    bundle_end = trend_header + len(bundle_totals)
+    add_chart(quantity_chart, 5, 2, "Bundle Purchase Quantity", "I15", "F6C445", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Quantity")
+    add_chart(LineChart(), 6, 2, "Traffic Trend | GB", "B31", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Traffic (GB)")
+    add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859", dimension_start, category_end_row, doughnut=True)
     bundle_chart = BarChart()
     bundle_chart.type = "bar"
-    add_chart(bundle_chart, 10, 9, "Top 10 Bundles by Revenue", "I29", "006341", bundle_end)
+    add_chart(bundle_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341", dimension_start, top_bundle_end_row, x_axis_title="Revenue (ETB)", y_axis_title="Bundle")
+    traffic_chart = BarChart()
+    traffic_chart.type = "bar"
+    add_chart(traffic_chart, 22, 21, "Top Bundles by Traffic", "I47", "F6C445", dimension_start, top_traffic_end_row, x_axis_title="Traffic (GB)", y_axis_title="Bundle")
+
+    weekly_table_title_row = 64
+    weekly_table_header_row = weekly_table_title_row + 1
+    weekly_table_start_row = weekly_table_header_row + 1
+    ws.merge_cells(start_row=weekly_table_title_row, start_column=2, end_row=weekly_table_title_row, end_column=16)
+    ws.cell(weekly_table_title_row, 2, "WEEK-ON-WEEK PERFORMANCE")
+    ws.cell(weekly_table_title_row, 2).font = Font(name="Aptos Display", size=12, bold=True, color="FFFFFF")
+    ws.cell(weekly_table_title_row, 2).fill = PatternFill("solid", fgColor="006341")
+    for col in range(2, 17):
+        ws.cell(weekly_table_title_row, col).fill = PatternFill("solid", fgColor="006341")
+
+    weekly_columns = [
+        (2, 4, "REPORTING WEEK", 23),
+        (5, 7, "REVENUE (ETB)", 24),
+        (8, 10, "REVENUE CHANGE VS PRIOR WEEK", 25),
+        (11, 13, "PURCHASE QUANTITY", 26),
+        (14, 16, "TRAFFIC (GB)", 27),
+    ]
+    for first_col, last_col, heading, _ in weekly_columns:
+        ws.merge_cells(start_row=weekly_table_header_row, start_column=first_col, end_row=weekly_table_header_row, end_column=last_col)
+        header_cell = ws.cell(weekly_table_header_row, first_col, heading)
+        header_cell.font = Font(name="Aptos", size=8, bold=True, color="FFFFFF")
+        header_cell.fill = PatternFill("solid", fgColor="287A58")
+        header_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True, shrink_to_fit=True)
+        for col in range(first_col, last_col + 1):
+            ws.cell(weekly_table_header_row, col).fill = PatternFill("solid", fgColor="287A58")
+
+    for week_index in range(len(weekly_periods)):
+        row_idx = weekly_table_start_row + week_index
+        source_row = weekly_start_row + week_index
+        for first_col, last_col, _, source_col in weekly_columns:
+            ws.merge_cells(start_row=row_idx, start_column=first_col, end_row=row_idx, end_column=last_col)
+            cell = ws.cell(row_idx, first_col, f"=calculations!{get_column_letter(source_col)}{source_row}")
+            cell.font = Font(name="Aptos", size=10, bold=source_col == 25, color="24332D")
+            cell.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
+            cell.fill = PatternFill("solid", fgColor="F1F8F4" if week_index % 2 == 0 else "FFFFFF")
+            cell.border = THIN_BORDER
+        ws.cell(row_idx, 5).number_format = '#,##0.00 "ETB"'
+        ws.cell(row_idx, 8).number_format = "0.0%;[Red]-0.0%"
+        ws.cell(row_idx, 11).number_format = "#,##0"
+        ws.cell(row_idx, 14).number_format = '#,##0.0 "GB"'
+        ws.row_dimensions[row_idx].height = 23
+
+    weekly_last_row = weekly_table_start_row + len(weekly_periods) - 1
+    red_fill = PatternFill("solid", fgColor="FCE4D6")
+    green_fill = PatternFill("solid", fgColor="E2F0D9")
+    red_font = Font(color="C00000", bold=True)
+    green_font = Font(color="006100", bold=True)
+    if weekly_periods:
+        calc_week_change = f"Y{weekly_start_row}:Y{weekly_start_row + len(weekly_periods) - 1}"
+        dashboard_week_change = f"H{weekly_table_start_row}:H{weekly_last_row}"
+        for sheet, cell_range in ((calc_ws, calc_week_change), (ws, dashboard_week_change)):
+            sheet.conditional_formatting.add(cell_range, CellIsRule(operator="lessThan", formula=["0"], fill=red_fill, font=red_font))
+            sheet.conditional_formatting.add(cell_range, CellIsRule(operator="greaterThanOrEqual", formula=["0"], fill=green_fill, font=green_font))
+
+    weekly_chart = BarChart()
+    weekly_chart.type = "col"
+    weekly_chart_data_end = trend_header + len(weekly_periods)
+    weekly_chart_anchor_row = weekly_table_start_row + len(weekly_periods) + 2
+    add_chart(
+        weekly_chart,
+        24,
+        23,
+        "Weekly Revenue Comparison | ETB",
+        f"B{weekly_chart_anchor_row}",
+        "00A859",
+        weekly_start_row,
+        weekly_chart_data_end,
+        x_axis_title="Reporting week",
+        y_axis_title="Revenue (ETB)",
+    )
+    weekly_chart.width = 27
+    weekly_chart.height = 9
 
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 1
-    ws.print_area = "B2:P42"
+    ws.page_setup.fitToHeight = 0
+    ws.print_area = f"B2:P{weekly_chart_anchor_row + 18}"
+    if weekly_periods:
+        calc_ws.conditional_formatting.add(
+            f"Y{weekly_start_row + 1}:Y{weekly_start_row + len(weekly_periods) - 1}",
+            CellIsRule(operator="lessThan", formula=["0"], fill=red_fill, font=red_font),
+        )
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
+    wb.calculation.calcMode = "auto"
 
 
-def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, end_date: str) -> Path:
+def create_excel(
+    usage: pd.DataFrame,
+    purchases: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    sample_source_date: str | None = None,
+    output_suffix: str = "",
+) -> Path:
     """
     Creates an Excel workbook matching the exact structure and styling of
     'Unlimted Data peformance summary - Copy.xlsx'.
     """
-    output_path = REPORT_DIR / f"Bundle_Performance_{start_date}_{end_date}.xlsx"
+    output_path = REPORT_DIR / f"Bundle_Performance_{start_date}_{end_date}{output_suffix}.xlsx"
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -270,24 +581,6 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         date_keys = [int(start_date)]
 
     sorted_dates = sorted([parse_date_key(k) for k in date_keys])
-
-    # 2. Build lookup maps
-    purchases_map = {}
-    if not purchases.empty:
-        for _, row in purchases.iterrows():
-            b_name = clean_bundle_name(str(row.get("BUNDLE_NAME", "")))
-            d_key = parse_date_key(row.get("ID_DATE", "")).strftime("%Y%m%d")
-            metric = str(row.get("METRIC", "")).strip()
-            val = float(row.get("VALUE", 0.0) or 0.0)
-            purchases_map[(b_name, d_key, metric)] = val
-
-    usage_map = {}
-    if not usage.empty:
-        for _, row in usage.iterrows():
-            b_name = clean_bundle_name(str(row.get("BUNDLE_NAME", "")))
-            d_key = parse_date_key(row.get("ID_DATE", "")).strftime("%Y%m%d")
-            val = float(row.get("VALUE", 0.0) or 0.0)
-            usage_map[(b_name, d_key)] = val
 
     # Sheets
     ws_summary = wb.create_sheet("Summary")
@@ -338,6 +631,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
             row_cursor = 4
         else:
             row_cursor = 3
+        ws.freeze_panes = ws.cell(row_cursor, start_col).coordinate
 
         cat_start_rows = {}
         bundle_row_map = {}
@@ -346,7 +640,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         gize_start = row_cursor
         for b in BUNDLE_SPECS[:6]:
             bundle_row_map[b["name"]] = row_cursor
-            ws.cell(row_cursor, 2, b["name"])
+            ws.cell(row_cursor, 2, b["display_name"])
             ws.cell(row_cursor, 3, b["price"])
             if is_traffic:
                 ws.cell(row_cursor, 4, "unl MB")
@@ -371,7 +665,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         daily_start = row_cursor
         for b in BUNDLE_SPECS[6:9]:
             bundle_row_map[b["name"]] = row_cursor
-            ws.cell(row_cursor, 2, b["name"])
+            ws.cell(row_cursor, 2, b["display_name"])
             ws.cell(row_cursor, 3, b["price"])
             if is_traffic:
                 ws.cell(row_cursor, 4, "unl MB")
@@ -397,7 +691,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         weekly_start = row_cursor
         for b in BUNDLE_SPECS[9:12]:
             bundle_row_map[b["name"]] = row_cursor
-            ws.cell(row_cursor, 2, b["name"])
+            ws.cell(row_cursor, 2, b["display_name"])
             ws.cell(row_cursor, 3, b["price"])
             if is_traffic:
                 ws.cell(row_cursor, 4, "unl MB")
@@ -423,7 +717,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         monthly_start = row_cursor
         for b in BUNDLE_SPECS[12:15]:
             bundle_row_map[b["name"]] = row_cursor
-            ws.cell(row_cursor, 2, b["name"])
+            ws.cell(row_cursor, 2, b["display_name"])
             ws.cell(row_cursor, 3, b["price"])
             if is_traffic:
                 ws.cell(row_cursor, 4, "unl MB")
@@ -449,7 +743,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         wullo_start = row_cursor
         for b in BUNDLE_SPECS[15:18]:
             bundle_row_map[b["name"]] = row_cursor
-            ws.cell(row_cursor, 2, b["name"])
+            ws.cell(row_cursor, 2, b["display_name"])
             ws.cell(row_cursor, 3, b["price"])
             if is_traffic:
                 ws.cell(row_cursor, 4, "unl MB")
@@ -473,16 +767,18 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         for idx, dt in enumerate(sorted_dates):
             col = start_col + idx
             col_letter = get_column_letter(col)
-            d_key = dt.strftime("%Y%m%d")
+            day_ref = f'VALUE(TEXT({col_letter}${header_date_row},"yyyymmdd"))'
 
             for b in BUNDLE_SPECS:
                 r_num = bundle_row_map[b["name"]]
                 if is_traffic:
-                    val = usage_map.get((b["name"], d_key), 0.0)
+                    formula = _dashboard_traffic_formula(day_ref=day_ref, bundle_ref=f"$B{r_num}")
                 else:
-                    val = purchases_map.get((b["name"], d_key, metric_code), 0.0)
+                    formula = _dashboard_purchase_formula(
+                        metric_code, day_ref=day_ref, bundle_ref=f"$B{r_num}"
+                    )
 
-                cell = ws.cell(r_num, col, val)
+                cell = ws.cell(r_num, col, formula)
                 cell.number_format = NUM_FORMAT
                 cell.border = THIN_BORDER
 
@@ -667,13 +963,13 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         c_date.border = THIN_BORDER
 
     traf_rows_meta = [
-        (32, None, "Gize +", "REVENUE", f"TRAFFIC!{{col}}{traf_cat_rows['Gize +']}"),
+        (32, None, "Gize +", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Gize +']}"),
         (33, None, "Wullo Package ", None, f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
-        (34, None, "Mata Package ", "REVENUE", f"TRAFFIC!{{col}}{traf_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
+        (34, None, "Mata Package ", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
         (35, None, "Montlhly  Wullo", None, f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
-        (36, None, "Daily Unlimited", "REVENUE", f"TRAFFIC!{{col}}{traf_cat_rows['Daily Unlimited']}"),
-        (37, None, "Weekly Unlimited", "REVENUE", f"TRAFFIC!{{col}}{traf_cat_rows['Weekly Unlimited']}"),
-        (38, None, "Monthly Unlimited", "REVENUE", f"TRAFFIC!{{col}}{traf_cat_rows['Monthly Unlimited']}"),
+        (36, None, "Daily Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Daily Unlimited']}"),
+        (37, None, "Weekly Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Weekly Unlimited']}"),
+        (38, None, "Monthly Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Monthly Unlimited']}"),
     ]
     for r_num, b_val, c_val, d_val, formula_template in traf_rows_meta:
         ws_summary.cell(r_num, 2, b_val)
@@ -703,13 +999,13 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         c_date.border = THIN_BORDER
 
     rate_rows_meta = [
-        (42, None, "Gize +", "REVENUE", 23, 32),
+        (42, None, "Gize +", "ETB/GB", 23, 32),
         (43, None, "Wullo Package ", None, 24, 33),
-        (44, None, "Mata Package ", "REVENUE", 25, 34),
+        (44, None, "Mata Package ", "ETB/GB", 25, 34),
         (45, None, "Montlhly  Wullo", None, 26, 35),
-        (46, None, "Daily Unlimited", "REVENUE", 27, 36),
-        (47, None, "Weekly Unlimited", "REVENUE", 28, 37),
-        (48, None, "Monthly Unlimited", "REVENUE", 29, 38),
+        (46, None, "Daily Unlimited", "ETB/GB", 27, 36),
+        (47, None, "Weekly Unlimited", "ETB/GB", 28, 37),
+        (48, None, "Monthly Unlimited", "ETB/GB", 29, 38),
     ]
     for r_num, b_val, c_val, d_val, rev_r, traf_r in rate_rows_meta:
         ws_summary.cell(r_num, 2, b_val)
@@ -731,41 +1027,53 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
         ws_summary.column_dimensions[col_letter].width = 15
 
     # Raw datasets
-    bp_headers = ["ID_DATE", "BUNDLE_CATEGORY", "BUNDLE_NAME", "METRIC", "VALUE"]
+    purchases_export = purchases.copy()
+    if not purchases_export.empty:
+        purchases_export["NCCID"] = purchases_export["BUNDLE_NAME"].map(clean_bundle_name)
+        purchases_export["BUNDLE_NAME"] = purchases_export["BUNDLE_NAME"].map(display_bundle_name)
+
+    bp_headers = ["ID_DATE", "BUNDLE_CATEGORY", "BUNDLE_NAME", "NCCID", "METRIC", "VALUE"]
     for c_idx, h in enumerate(bp_headers, 1):
         cell = ws_bp.cell(1, c_idx, h)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="1A5276", end_color="1A5276", fill_type="solid")
 
-    if not purchases.empty:
-        for r_idx, row in enumerate(purchases.itertuples(index=False), 2):
+    if not purchases_export.empty:
+        for r_idx, row in enumerate(purchases_export.itertuples(index=False), 2):
             for c_idx, col_name in enumerate(bp_headers, 1):
                 val = getattr(row, col_name, None)
                 cell = ws_bp.cell(r_idx, c_idx, val)
                 if col_name == "VALUE":
                     cell.number_format = NUM_FORMAT
 
-    for c in ["A", "B", "C", "D", "E"]:
-        ws_bp.column_dimensions[c].width = 28
+    for c, width in {"A": 14, "B": 22, "C": 34, "D": 48, "E": 16, "F": 18}.items():
+        ws_bp.column_dimensions[c].width = width
+    ws_bp.column_dimensions["D"].hidden = True
 
-    td_headers = ["ID_DATE", "BUNDLE_NAME", "METRIC", "VALUE"]
+    usage_export = usage.copy()
+    if not usage_export.empty:
+        usage_export["NCCID"] = usage_export["BUNDLE_NAME"].map(clean_bundle_name)
+        usage_export["BUNDLE_NAME"] = usage_export["BUNDLE_NAME"].map(display_bundle_name)
+
+    td_headers = ["ID_DATE", "BUNDLE_NAME", "METRIC", "VALUE", "NCCID"]
     for c_idx, h in enumerate(td_headers, 2):
         cell = ws_tu.cell(3, c_idx, h)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="1A5276", end_color="1A5276", fill_type="solid")
 
-    if not usage.empty:
-        for r_idx, row in enumerate(usage.itertuples(index=False), 4):
+    if not usage_export.empty:
+        for r_idx, row in enumerate(usage_export.itertuples(index=False), 4):
             for c_idx, col_name in enumerate(td_headers, 2):
                 val = getattr(row, col_name, None)
                 cell = ws_tu.cell(r_idx, c_idx, val)
                 if col_name == "VALUE":
                     cell.number_format = NUM_FORMAT
 
-    for c in ["B", "C", "D", "E"]:
-        ws_tu.column_dimensions[c].width = 30
+    for c, width in {"B": 14, "C": 34, "D": 16, "E": 18, "F": 48}.items():
+        ws_tu.column_dimensions[c].width = width
+    ws_tu.column_dimensions["F"].hidden = True
 
-    add_dashboard_sheet(wb, purchases, usage, start_date, end_date)
+    add_dashboard_sheet(wb, purchases_export, usage_export, start_date, end_date, sample_source_date)
     wb.save(output_path)
     return output_path
 
@@ -792,7 +1100,7 @@ def build_display_tables(usage: pd.DataFrame, purchases: pd.DataFrame):
         for b in BUNDLE_SPECS:
             row_dict = {
                 "Category": b["category"],
-                "Bundle Name": b["name"],
+                "Bundle Name": b["display_name"],
                 "Price (ETB)": b["price"],
                 "Validity": b["validity"],
             }
@@ -898,9 +1206,16 @@ def build_display_tables(usage: pd.DataFrame, purchases: pd.DataFrame):
     }
 
 
-def create_pdf(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, end_date: str) -> Path:
+def create_pdf(
+    usage: pd.DataFrame,
+    purchases: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    sample_source_date: str | None = None,
+    output_suffix: str = "",
+) -> Path:
     """Creates a styled executive PDF summary report."""
-    output = REPORT_DIR / f"Bundle_Performance_{start_date}_{end_date}.pdf"
+    output = REPORT_DIR / f"Bundle_Performance_{start_date}_{end_date}{output_suffix}.pdf"
     document = SimpleDocTemplate(str(output), pagesize=landscape(A4))
     styles = getSampleStyleSheet()
 
@@ -909,6 +1224,14 @@ def create_pdf(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, en
         Paragraph(f"Reporting Window: {start_date} to {end_date}", styles["Normal"]),
         Spacer(1, 15),
     ]
+    if sample_source_date:
+        content.extend([
+            Paragraph(
+                f"SAMPLE DATA: Values are from {sample_source_date} and re-dated to the requested reporting day.",
+                styles["Italic"],
+            ),
+            Spacer(1, 12),
+        ])
 
     total_rev = purchases.loc[purchases["METRIC"] == "C.REVENUE", "VALUE"].astype(float).sum() if not purchases.empty else 0.0
     total_subs = purchases.loc[purchases["METRIC"] == "A.SUBS", "VALUE"].astype(float).sum() if not purchases.empty else 0.0

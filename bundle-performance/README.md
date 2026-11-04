@@ -32,22 +32,12 @@ This project automates the end-to-end data processing, quality assurance, multi-
 3. **Step 3: Report Archiving**
    - Automatically archives previous report workbooks into `reports/Archives/` prior to generating new runs.
 
-4. **Step 4: Interactive Excel Dashboard Creation & Pivot Table Refresh**
-   - Uses the master Excel dashboard template `template/bundle_performance.xlsx` (matching `Unlimted Data peformance summary - Copy.xlsx`).
-   - Appends new daily records into the underlying Excel tables:
-     - `Table5` on `BUNDLE PURCHASE`
-     - `Table1` on `TRAFFIC_DATA`
-   - Executes `wb.RefreshAll()` via Excel COM (`win32com.client`) to update all interactive Pivot Tables and calculated formulas.
-  - Preserves all 9 sheets:
-     - `Dashboard` (KPI tiles, daily revenue and purchase trends, revenue by category, and top bundles)
-     - `Summary` (Executive metrics with SUBS, QUANTITY, REVENUE, TRAFFIC, RATE ETB/GB, and weekly averages `Wk5`–`Wk13`)
-     - `SUBS` (Subscriber breakdown across 18 bundles and category subtotals)
-     - `QUTY` (Purchase quantity breakdown)
-     - `REVENUE` (Revenue in ETB breakdown)
-     - `TRAFFIC` (Traffic in MB breakdown)
-     - `BUNDLE PURCHASE` (Raw purchases dataset + PivotTable4)
-     - `TRAFFIC_DATA` (Raw traffic dataset + PivotTable1)
-     - `Sheet1` (Vertical sub-summary)
+4. **Step 4: Clean Date-Range Excel Dashboard**
+   - Builds a fresh workbook for the requested period; it does not carry forward old template values or pivot caches.
+   - `Dashboard` has formula-linked revenue, subscriber, quantity, and traffic KPIs plus six charts.
+   - `calculations` contains Excel formulas that read the raw `BUNDLE PURCHASE` and `TRAFFIC_DATA` sheets.
+   - Visible bundle labels are business-friendly; the technical identifier is retained separately as `NCCID`.
+   - Includes `Summary`, `SUBS`, `QUTY`, `REVENUE`, `TRAFFIC`, `BUNDLE PURCHASE`, and `TRAFFIC_DATA` detail sheets.
 
 5. **Step 5: Sharing by Outlook Mail**
    - Generates an executive HTML email with formatted KPI cards and status indicators.
@@ -70,11 +60,14 @@ bundle_performance.bat
 ### 2. Python CLI Execution
 Run the automated pipeline via `uv`:
 ```cmd
-# Run with sample date (DuckDB)
+# Run latest populated sample date (DuckDB)
 uv run python bundle_performance.py
 
 # Run for a specific date
 uv run python bundle_performance.py --date=20261019
+
+# Run a selected date range
+uv run python bundle_performance.py --start=20261019 --end=20261030 --duckdb
 
 # Run against Oracle Production
 uv run python bundle_performance.py --oracle

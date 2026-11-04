@@ -72,6 +72,19 @@ def execute_duckdb_query(sql_file: str, start_date: str, end_date: str) -> pd.Da
         con.close()
 
 
+def get_latest_sample_date() -> str:
+    """Returns the latest populated date key from the local sample database."""
+    init_dummy_database(DB_PATH)
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    try:
+        value = con.execute("SELECT MAX(ID_DATE) FROM BUNDLE_PURCHASE_2026_09_28").fetchone()[0]
+        if value is None:
+            raise ValueError("The local sample database has no purchase dates.")
+        return str(int(value))
+    finally:
+        con.close()
+
+
 def load_bundle_data(start_date: str, end_date: str, source: str = "auto") -> tuple[pd.DataFrame, pd.DataFrame, str]:
     """
     Loads bundle usage and purchase data.
