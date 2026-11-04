@@ -175,11 +175,11 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
                                 <td style="padding: 8px; border: 1px solid #e0e0e0; color: #0b8043; font-weight: bold;">{total_rev:,.2f} ETB</td>
                             </tr>
                             <tr>
-                                <td style="padding: 8px; border: 1px solid #e0e0e0;"><b>Active Subscribers</b></td>
+                                <td style="padding: 8px; border: 1px solid #e0e0e0;"><b>Bundle Subscriber Count</b></td>
                                 <td style="padding: 8px; border: 1px solid #e0e0e0;">{total_subs:,.0f}</td>
                             </tr>
                             <tr>
-                                <td style="padding: 8px; border: 1px solid #e0e0e0;"><b>Purchase Transactions</b></td>
+                                <td style="padding: 8px; border: 1px solid #e0e0e0;"><b>Purchase Quantity</b></td>
                                 <td style="padding: 8px; border: 1px solid #e0e0e0;">{total_qty:,.0f}</td>
                             </tr>
                             <tr>

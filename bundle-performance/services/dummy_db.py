@@ -200,6 +200,8 @@ def init_dummy_database(db_path: Path = DB_PATH, force_recreate: bool = False) -
     ]
     if 20261019 not in dates:
         dates.append(20261019)
+    if 20260901 not in dates:
+        dates.append(20260901)
     dates = sorted(list(set(dates)))
 
     random.seed(42)
@@ -221,16 +223,33 @@ def init_dummy_database(db_path: Path = DB_PATH, force_recreate: bool = False) -
             num_subs = int(b["base_subs"] * variation / 25)
             num_subs = max(num_subs, 10)
 
+            sites = ['AA_BOLE_001', 'AA_KIRKOS_002', 'OR_ADAMA_003', 'OR_HAWASSA_004', 'AM_BAHIR_005', 'TG_MEKELLE_006']
             # Sample subscribers for this date & bundle
             sampled = random.sample(msisdn_pool, min(num_subs, len(msisdn_pool)))
             for msisdn in sampled:
                 qty = random.choices([1, 2, 3], weights=[0.88, 0.10, 0.02])[0]
+                channel = random.choices(['MPESA', 'AIRTIME'], weights=[0.45, 0.55])[0]
+                channel_det = random.choices(['MPESA_USSD', 'MPESA_SUPERAPP', 'USSD', 'DXL', 'CRM'], weights=[0.35, 0.20, 0.30, 0.10, 0.05])[0]
+                owner = 'EBU' if 'EBU_' in bundle_name else 'CBU'
+                validity = '1 Hour' if '1HR' in bundle_name else ('2 Hour' if '2HR' in bundle_name else ('1 Week' if 'WEEKLY' in bundle_name else ('30 Day' if 'MONTHLY' in bundle_name else '1 Day')))
+                validity_grp = 'TIMEBASED' if 'TIMEBASED' in bundle_name else ('WEEKLY' if 'WEEKLY' in bundle_name else ('MONTHLY' if 'MONTHLY' in bundle_name else 'DAILY'))
+                
                 purchases_rows.append({
                     "ID_DATE": date_key,
+                    "DS_SITE_ID": random.choice(sites),
                     "MSISDN": msisdn,
+                    "CHANNEL": channel,
+                    "CHANNEL_DETAILS": channel_det,
                     "BUNDLE_NAME": bundle_name,
                     "PURCHASE_QTY": qty,
                     "PURCHASE_AMT": qty * price,
+                    "Bundle_Owner": owner,
+                    "Validity": validity,
+                    "Bundle_Type": "Data",
+                    "ATL_BTL": random.choices(['ATL', 'BTL'], weights=[0.7, 0.3])[0],
+                    "COMBO_STATUS": "STANDALONE",
+                    "BUNDLE_GROUP_TYPE": "TIMEBASED" if "TIMEBASED" in bundle_name else "UNLIMITED",
+                    "VALIDTY_GROUP": validity_grp,
                 })
 
             # Usage in bytes = MB * 1024 * 1024

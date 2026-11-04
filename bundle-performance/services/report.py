@@ -1,6 +1,7 @@
 """
 Report generation service for Bundle Performance.
 Generates the exact multi-tab executive Excel report:
+- Dashboard (KPI tiles, daily trends, category revenue, and top bundles)
 - Summary (Executive metrics across dates: SUBS, QUANTITY, REVENUE, TRAFFIC, RATE)
 - SUBS (Subscriber counts by bundle with category subtotals)
 - QUTY (Purchase quantity by bundle with category subtotals)
@@ -14,6 +15,7 @@ And generates a styled PDF summary report.
 from datetime import datetime
 from pathlib import Path
 import openpyxl
+from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -83,6 +85,169 @@ def parse_date_key(d) -> datetime:
     if len(s) >= 8 and s[:8].isdigit():
         return datetime.strptime(s[:8], "%Y%m%d")
     return datetime.today()
+
+
+def add_dashboard_sheet(wb, purchases: pd.DataFrame, usage: pd.DataFrame, start_date: str, end_date: str):
+    ws = wb.create_sheet("Dashboard", 0)
+    ws.sheet_view.showGridLines = False
+    ws.sheet_view.zoomScale = 85
+    ws.freeze_panes = "B6"
+
+    for col in range(2, 17):
+        ws.column_dimensions[get_column_letter(col)].width = 13
+    ws.column_dimensions["A"].width = 3
+    ws.column_dimensions["Q"].width = 3
+    ws.row_dimensions[2].height = 25
+    ws.row_dimensions[3].height = 25
+    ws.row_dimensions[4].height = 22
+
+    ws.merge_cells("B2:P3")
+    title = ws["B2"]
+    title.value = "BUNDLE PURCHASE PERFORMANCE"
+    title.font = Font(name="Aptos Display", size=22, bold=True, color="FFFFFF")
+    title.fill = PatternFill("solid", fgColor="006341")
+    title.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    for row in ws["B2:P3"]:
+        for cell in row:
+            cell.fill = PatternFill("solid", fgColor="006341")
+
+    ws.merge_cells("B4:P4")
+    ws["B4"] = f"SAFARICOM ETHIOPIA  |  REPORTING WINDOW: {start_date} - {end_date}"
+    ws["B4"].font = Font(name="Aptos", size=10, bold=True, color="006341")
+    ws["B4"].alignment = Alignment(vertical="center")
+
+    purchase_values = purchases.copy()
+    if not purchase_values.empty:
+        purchase_values["VALUE"] = pd.to_numeric(purchase_values["VALUE"], errors="coerce").fillna(0)
+
+    def metric_total(code):
+        if purchase_values.empty:
+            return 0.0
+        return float(purchase_values.loc[purchase_values["METRIC"].astype(str) == code, "VALUE"].sum())
+
+    total_revenue = metric_total("C.REVENUE")
+    total_subscribers = metric_total("A.SUBS")
+    total_quantity = metric_total("B.QUANTITY")
+    total_mb = float(pd.to_numeric(usage.get("VALUE", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+    total_gb = total_mb / 1024
+    effective_rate = total_revenue / total_gb if total_gb else 0.0
+
+    cards = [
+        (2, 4, "TOTAL REVENUE", total_revenue, '#,##0.00 "ETB"'),
+        (5, 7, "BUNDLE SUBSCRIBER COUNT", total_subscribers, "#,##0"),
+        (8, 10, "PURCHASE QUANTITY", total_quantity, "#,##0"),
+        (11, 13, "DATA TRAFFIC", total_gb, '#,##0.0 "GB"'),
+        (14, 16, "EFFECTIVE RATE", effective_rate, '#,##0.00 "ETB/GB"'),
+    ]
+    for first_col, last_col, label, value, number_format in cards:
+        ws.merge_cells(start_row=6, start_column=first_col, end_row=6, end_column=last_col)
+        ws.merge_cells(start_row=7, start_column=first_col, end_row=8, end_column=last_col)
+        for row in range(6, 9):
+            for col in range(first_col, last_col + 1):
+                cell = ws.cell(row, col)
+                cell.fill = PatternFill("solid", fgColor="F1F8F4")
+                cell.border = THIN_BORDER
+        label_cell = ws.cell(6, first_col)
+        label_cell.value = label
+        label_cell.font = Font(name="Aptos", size=9, bold=True, color="42665A")
+        label_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        value_cell = ws.cell(7, first_col)
+        value_cell.value = value
+        value_cell.number_format = number_format
+        value_cell.font = Font(name="Aptos Display", size=17, bold=True, color="006341")
+        value_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.merge_cells("B10:P10")
+    ws["B10"] = "Subscriber counts are distinct within each bundle and summed across bundles; purchase quantity is not transaction count."
+    ws["B10"].font = Font(name="Aptos", size=9, italic=True, color="64748B")
+
+    trend_header = 45
+    for col, value in enumerate(["Date", "Revenue (ETB)", "Purchase Quantity"], start=2):
+        ws.cell(trend_header, col, value)
+
+    daily_totals = {}
+    if not purchase_values.empty:
+        for row in purchase_values.itertuples(index=False):
+            day = parse_date_key(getattr(row, "ID_DATE")).date()
+            key = (day, str(getattr(row, "METRIC")))
+            daily_totals[key] = daily_totals.get(key, 0.0) + float(getattr(row, "VALUE") or 0.0)
+
+    chart_dates = sorted({parse_date_key(k).date() for k in purchases["ID_DATE"]}) if not purchases.empty else [parse_date_key(start_date).date()]
+    if not chart_dates:
+        chart_dates = [parse_date_key(start_date).date()]
+    for row_idx, day in enumerate(chart_dates, start=trend_header + 1):
+        ws.cell(row_idx, 2, datetime.combine(day, datetime.min.time()))
+        ws.cell(row_idx, 2).number_format = "d-mmm"
+        ws.cell(row_idx, 3, daily_totals.get((day, "C.REVENUE"), 0.0))
+        ws.cell(row_idx, 4, daily_totals.get((day, "B.QUANTITY"), 0.0))
+
+    revenue_data = purchase_values[
+        purchase_values["METRIC"].astype(str) == "C.REVENUE"
+    ].copy() if not purchase_values.empty else pd.DataFrame()
+    if not revenue_data.empty:
+        revenue_data["BUNDLE_NAME"] = revenue_data["BUNDLE_NAME"].map(clean_bundle_name)
+        category_totals = revenue_data.groupby("BUNDLE_CATEGORY", dropna=False)["VALUE"].sum().sort_values(ascending=False)
+        bundle_totals = revenue_data.groupby("BUNDLE_NAME")["VALUE"].sum().sort_values(ascending=False).head(10)
+    else:
+        category_totals = pd.Series({"No data": 0.0})
+        bundle_totals = pd.Series({"No data": 0.0})
+
+    for col, value in enumerate(["Bundle Category", "Revenue (ETB)"], start=6):
+        ws.cell(trend_header, col, value)
+    for row_idx, (category, value) in enumerate(category_totals.items(), start=trend_header + 1):
+        ws.cell(row_idx, 6, str(category) if pd.notna(category) else "Uncategorized")
+        ws.cell(row_idx, 7, float(value))
+
+    for col, value in enumerate(["Bundle", "Revenue (ETB)"], start=9):
+        ws.cell(trend_header, col, value)
+    for row_idx, (bundle, value) in enumerate(bundle_totals.items(), start=trend_header + 1):
+        ws.cell(row_idx, 9, bundle)
+        ws.cell(row_idx, 10, float(value))
+
+    for col in [2, 3, 4, 6, 7, 9, 10]:
+        cell = ws.cell(trend_header, col)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="006341")
+    ws.merge_cells("B43:D43")
+    ws["B43"] = "DAILY PERFORMANCE"
+    ws.merge_cells("F43:G43")
+    ws["F43"] = "REVENUE BY CATEGORY"
+    ws.merge_cells("I43:J43")
+    ws["I43"] = "TOP BUNDLES BY REVENUE"
+    for cell_ref in ("B43", "F43", "I43"):
+        ws[cell_ref].font = Font(bold=True, color="006341")
+
+    def add_chart(chart, data_col, category_col, title_text, anchor, color, max_row):
+        chart.add_data(Reference(ws, min_col=data_col, min_row=trend_header, max_row=max_row), titles_from_data=True)
+        chart.set_categories(Reference(ws, min_col=category_col, min_row=trend_header + 1, max_row=max_row))
+        chart.title = title_text
+        chart.style = 10
+        chart.height = 8.5
+        chart.width = 15.5
+        chart.legend = None
+        chart.series[0].graphicalProperties.solidFill = color
+        chart.series[0].graphicalProperties.line.solidFill = color
+        ws.add_chart(chart, anchor)
+
+    trend_end = trend_header + len(chart_dates)
+    revenue_chart = LineChart()
+    add_chart(revenue_chart, 3, 2, "Daily Revenue (ETB)", "B12", "00A859", trend_end)
+    quantity_chart = BarChart()
+    quantity_chart.type = "col"
+    add_chart(quantity_chart, 4, 2, "Daily Purchase Quantity", "I12", "F6C445", trend_end)
+    category_end = trend_header + len(category_totals)
+    category_chart = BarChart()
+    category_chart.type = "bar"
+    add_chart(category_chart, 7, 6, "Revenue by Category", "B29", "00A859", category_end)
+    bundle_end = trend_header + len(bundle_totals)
+    bundle_chart = BarChart()
+    bundle_chart.type = "bar"
+    add_chart(bundle_chart, 10, 9, "Top 10 Bundles by Revenue", "I29", "006341", bundle_end)
+
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.print_area = "B2:P42"
 
 
 def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, end_date: str) -> Path:
@@ -600,6 +765,7 @@ def create_excel(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, 
     for c in ["B", "C", "D", "E"]:
         ws_tu.column_dimensions[c].width = 30
 
+    add_dashboard_sheet(wb, purchases, usage, start_date, end_date)
     wb.save(output_path)
     return output_path
 
@@ -752,7 +918,7 @@ def create_pdf(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, en
     rate_overall = (total_rev / total_gb) if total_gb > 0 else 0.0
 
     kpi_data = [
-        ["Total Revenue (ETB)", "Active Subscribers", "Transactions", "Data Volume (GB)", "Effective Rate (ETB/GB)"],
+        ["Total Revenue (ETB)", "Bundle Subscriber Count", "Purchase Quantity", "Data Volume (GB)", "Effective Rate (ETB/GB)"],
         [f"{total_rev:,.2f}", f"{total_subs:,.0f}", f"{total_qty:,.0f}", f"{total_gb:,.2f}", f"{rate_overall:,.2f}"],
     ]
     kpi_table = Table(kpi_data, colWidths=[150] * 5)
@@ -772,6 +938,13 @@ def create_pdf(usage: pd.DataFrame, purchases: pd.DataFrame, start_date: str, en
     )
     content.append(kpi_table)
     content.append(Spacer(1, 20))
+    content.append(
+        Paragraph(
+            "Subscriber counts are distinct within each bundle and summed across bundles; purchase quantity is not a transaction count.",
+            styles["Italic"],
+        )
+    )
+    content.append(Spacer(1, 12))
 
     if not purchases.empty:
         content.append(Paragraph("Category Revenue & Volume Breakdown", styles["Heading2"]))
