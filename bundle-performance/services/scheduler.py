@@ -13,7 +13,7 @@ import time
 import schedule
 
 from services.database import load_bundle_data
-from services.report import create_excel, create_pdf
+from services.report import create_excel
 from services.email_service import send_outlook_email, is_outlook_running
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -35,7 +35,6 @@ DEFAULT_CONFIG = {
     "cc_emails": "Lulae.Kassahun@safaricom.et; Kibrom.Hadush@safaricom.et; Betelhem.Girma@safaricom.et; Dagim.Hailu@safaricom.et",
     "send_email": False,
     "attach_excel": True,
-    "attach_pdf": True,
     "last_run_timestamp": None,
     "last_run_status": None,
 }
@@ -114,7 +113,6 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
         "status": "RUNNING",
         "email_sent": False,
         "excel_file": None,
-        "pdf_file": None,
         "message": "",
         "duration_sec": 0.0,
     }
@@ -127,17 +125,11 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
         # 2. Generate Reports
         attachments = []
         excel_path = None
-        pdf_path = None
 
         if cfg.get("attach_excel", True):
             excel_path = create_excel(usage, purchases, start_k, end_k)
             attachments.append(excel_path)
             entry["excel_file"] = str(excel_path.name)
-
-        if cfg.get("attach_pdf", True):
-            pdf_path = create_pdf(usage, purchases, start_k, end_k)
-            attachments.append(pdf_path)
-            entry["pdf_file"] = str(pdf_path.name)
 
         # 3. Calculate Key Highlights
         total_rev = purchases.loc[purchases["METRIC"] == "C.REVENUE", "VALUE"].astype(float).sum()
@@ -194,7 +186,7 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
                     </table>
 
                     <p style="font-size: 13px; color: #666;">
-                        The detailed breakdown is attached as Excel (.xlsx) and PDF document.
+                        The detailed breakdown is attached as an Excel workbook (.xlsx).
                     </p>
                     <br/>
                     <p>Best regards,<br/><b>Automated Reporting Service</b><br/>Safaricom Ethiopia</p>

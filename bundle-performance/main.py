@@ -1,7 +1,7 @@
 import argparse
 
 from services.database import load_bundle_data
-from services.report import create_excel, create_pdf
+from services.report import create_excel
 from services.email_service import send_outlook_email
 
 
@@ -53,15 +53,7 @@ def main():
         args.end
     )
 
-    pdf = create_pdf(
-        usage,
-        purchases,
-        args.start,
-        args.end
-    )
-
     print(f"Excel created: {excel}")
-    print(f"PDF created: {pdf}")
 
     if args.send_email:
 
@@ -75,7 +67,7 @@ def main():
                 "Please find attached the Bundle Performance Report."
                 "\n\nBest regards,\nMekin Jemal"
             ),
-            attachments=[excel, pdf]
+            attachments=[excel]
         )
 
         print("Email sent successfully.")

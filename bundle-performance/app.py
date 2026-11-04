@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from services.database import load_bundle_data
-from services.report import create_excel, create_pdf
+from services.report import create_excel
 from services.email_service import send_outlook_email, is_outlook_running
 from services.scheduler import (
     load_schedule_config,
@@ -177,7 +177,6 @@ if "usage" not in st.session_state and not run_queries:
         st.session_state.start_key = start_k
         st.session_state.end_key = end_k
         st.session_state.excel = str(create_excel(usage, purchases, start_k, end_k))
-        st.session_state.pdf = str(create_pdf(usage, purchases, start_k, end_k))
     except Exception:
         pass
 
@@ -196,7 +195,6 @@ if run_queries:
                 st.session_state.start_key = start_k
                 st.session_state.end_key = end_k
                 st.session_state.excel = str(create_excel(usage, purchases, start_k, end_k))
-                st.session_state.pdf = str(create_pdf(usage, purchases, start_k, end_k))
             st.sidebar.success(f"Data loaded from {actual_src}")
         except Exception as error:
             st.sidebar.error(f"Execution failed: {error}")
@@ -323,7 +321,7 @@ with tab_report:
 
         # 3. EXPORT & ACTIONS BAR
         st.subheader("Export & Report Dispatch")
-        exp_col1, exp_col2, exp_col3 = st.columns(3)
+        exp_col1, exp_col2 = st.columns(2)
 
         with exp_col1:
             with open(st.session_state.excel, "rb") as f:
@@ -337,17 +335,6 @@ with tab_report:
             )
 
         with exp_col2:
-            with open(st.session_state.pdf, "rb") as f:
-                pdf_bytes = f.read()
-            st.download_button(
-                "📄 Download PDF Summary (.pdf)",
-                pdf_bytes,
-                file_name=f"Bundle_Performance_{start_k}_{end_k}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-        with exp_col3:
             if st.button("✉️ Send Report via Outlook Now", use_container_width=True):
                 cfg = load_schedule_config()
                 if not is_outlook_running():
@@ -357,7 +344,7 @@ with tab_report:
                         res = send_outlook_email(
                             subject=f"Bundle Performance Report [{start_k} - {end_k}]",
                             body="Hello,\n\nPlease find attached the daily Bundle Performance Report.\n\nBest regards,\nMekin Jemal",
-                            attachments=[st.session_state.excel, st.session_state.pdf],
+                            attachments=[st.session_state.excel],
                             to=cfg.get("to_emails"),
                             cc=cfg.get("cc_emails"),
                         )
@@ -438,14 +425,11 @@ with tab_schedule:
             new_to = st.text_area("Direct Recipients (To)", value=cfg.get("to_emails", ""), height=70)
             new_cc = st.text_area("CC Recipients", value=cfg.get("cc_emails", ""), height=70)
 
-        opt_c1, opt_c2, opt_c3 = st.columns(3)
+        opt_c1, opt_c2 = st.columns(2)
         with opt_c1:
             new_send_email = st.checkbox("Automatically Send via Outlook", value=cfg.get("send_email", False))
         with opt_c2:
             new_excel = st.checkbox("Attach Excel Report", value=cfg.get("attach_excel", True))
-        with opt_c3:
-            new_pdf = st.checkbox("Attach PDF Summary", value=cfg.get("attach_pdf", True))
-
         save_btn = st.form_submit_button("💾 Save Schedule Settings", type="primary")
 
         if save_btn:
@@ -459,7 +443,6 @@ with tab_schedule:
                 "cc_emails": new_cc.strip(),
                 "send_email": new_send_email,
                 "attach_excel": new_excel,
-                "attach_pdf": new_pdf,
                 "last_run_timestamp": cfg.get("last_run_timestamp"),
                 "last_run_status": cfg.get("last_run_status"),
             }

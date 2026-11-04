@@ -35,7 +35,7 @@ from services.etl_service import (
     verify_data_completeness,
     populate_bundle_purchase_table,
 )
-from services.report import create_excel, create_pdf
+from services.report import create_excel
 from services.email_service import is_outlook_running
 
 print("\n" + "=" * 70)
@@ -212,7 +212,7 @@ for old_report in reports_folder.iterdir():
 # _________________________________________________
 # STEP 4: CLEAN DATE-RANGE REPORT CREATION
 print("\n" + "-" * 50)
-print("STEP 4: Excel Dashboard and PDF Report")
+print("STEP 4: Excel Dashboard")
 print("-" * 50)
 
 report_file_path = create_excel(
@@ -222,15 +222,7 @@ report_file_path = create_excel(
     end_date,
     output_suffix=f"_{fileExtension_name}",
 )
-pdf_file_path = create_pdf(
-    df_usage,
-    df_purchases,
-    start_date,
-    end_date,
-    output_suffix=f"_{fileExtension_name}",
-)
 print(f"Clean Excel report created: {report_file_path}")
-print(f"PDF summary created: {pdf_file_path}")
 
 
 # _________________________________________________

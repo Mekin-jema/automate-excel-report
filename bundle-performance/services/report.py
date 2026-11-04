@@ -21,6 +21,7 @@ from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.text import RichText
+from openpyxl.chart.data_source import NumFmt
 from openpyxl.drawing.text import CharacterProperties, Paragraph as DrawingParagraph, ParagraphProperties, RichTextProperties
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -183,14 +184,6 @@ def add_dashboard_sheet(
     report_dates = list(pd.date_range(parse_date_key(start_date), parse_date_key(end_date), freq="D"))
     if not report_dates:
         report_dates = [parse_date_key(start_date)]
-    week_groups = {}
-    for report_date in report_dates:
-        iso_year, iso_week, _ = report_date.isocalendar()
-        week_groups.setdefault((iso_year, iso_week), []).append(report_date)
-    weekly_periods = [
-        (week_key, min(days), max(days))
-        for week_key, days in sorted(week_groups.items())
-    ]
     data_start_row = 46
     data_end_row = data_start_row + len(report_dates) - 1
     kpi_formulas = {
@@ -248,7 +241,6 @@ def add_dashboard_sheet(
         ("N43:O43", "TOP REVENUE BUNDLES"),
         ("Q43:S43", "BUNDLE TRAFFIC RANKING"),
         ("U43:V43", "TOP TRAFFIC BUNDLES"),
-        ("W43:AA43", "WEEK-ON-WEEK PERFORMANCE"),
     ]
     for cell_range, title_text in section_titles:
         calc_ws.merge_cells(cell_range)
@@ -271,12 +263,8 @@ def add_dashboard_sheet(
         "G": 28, "H": 18, "I": 3, "J": 38, "K": 18, "L": 12,
         "M": 3, "N": 38, "O": 18, "P": 3, "Q": 38, "R": 18,
         "S": 12, "T": 3, "U": 38, "V": 18,
-        "W": 32, "X": 18, "Y": 18, "Z": 18, "AA": 18,
     }.items():
         calc_ws.column_dimensions[column].width = width
-
-    for column, value in enumerate(["Reporting Week", "Revenue (ETB)", "WoW Revenue Change", "Purchase Quantity", "Traffic (GB)"], start=23):
-        calc_ws.cell(trend_header, column, value)
 
     for row_idx, report_date in enumerate(report_dates, start=trend_header + 1):
         calc_ws.cell(row_idx, 2, report_date.to_pydatetime())
@@ -286,21 +274,6 @@ def add_dashboard_sheet(
         calc_ws.cell(row_idx, 4, _dashboard_purchase_formula("A.SUBS", day_ref=day_ref))
         calc_ws.cell(row_idx, 5, _dashboard_purchase_formula("B.QUANTITY", day_ref=day_ref))
         calc_ws.cell(row_idx, 6, _dashboard_traffic_formula(day_ref=day_ref) + "/1024")
-
-    weekly_start_row = trend_header + 1
-    for week_index, (week_key, week_start, week_end) in enumerate(weekly_periods):
-        row_idx = weekly_start_row + week_index
-        start_key = int(week_start.strftime("%Y%m%d"))
-        end_key = int(week_end.strftime("%Y%m%d"))
-        calc_ws.cell(row_idx, 23, f"{week_key[0]}-W{week_key[1]:02d} ({week_start:%d %b} - {week_end:%d %b})")
-        calc_ws.cell(row_idx, 24, _dashboard_purchase_formula("C.REVENUE", start_key=start_key, end_key=end_key))
-        calc_ws.cell(row_idx, 25, "BASELINE" if week_index == 0 else f"=IFERROR(X{row_idx}/X{row_idx - 1}-1,0)")
-        calc_ws.cell(row_idx, 26, _dashboard_purchase_formula("B.QUANTITY", start_key=start_key, end_key=end_key))
-        calc_ws.cell(row_idx, 27, _dashboard_traffic_formula(start_key=start_key, end_key=end_key) + "/1024")
-        calc_ws.cell(row_idx, 24).number_format = '#,##0.00 "ETB"'
-        calc_ws.cell(row_idx, 25).number_format = "0.0%;[Red]-0.0%"
-        calc_ws.cell(row_idx, 26).number_format = "#,##0"
-        calc_ws.cell(row_idx, 27).number_format = '#,##0.0 "GB"'
 
     purchase_categories = sorted(set(purchases.get("BUNDLE_CATEGORY", pd.Series(dtype=str)).dropna().astype(str)))
     bundle_names = sorted(set(purchases.get("BUNDLE_NAME", pd.Series(dtype=str)).dropna().astype(str)))
@@ -369,6 +342,26 @@ def add_dashboard_sheet(
     for first_col, last_col, _, metric_key, _ in cards:
         ws.cell(7, first_col).value = kpi_formulas[metric_key]
 
+    report_week_days = {}
+    for report_date in report_dates:
+        week_key = (report_date.isocalendar().year, report_date.isocalendar().week)
+        report_week_days[week_key] = report_week_days.get(week_key, 0) + 1
+    ordered_report_weeks = sorted(report_week_days)
+    if len(ordered_report_weeks) >= 2:
+        summary_week_start_col = 5 + len(report_dates)
+        previous_week_index = len(ordered_report_weeks) - 2
+        latest_week_index = len(ordered_report_weeks) - 1
+        previous_week_col = get_column_letter(summary_week_start_col + previous_week_index)
+        latest_week_col = get_column_letter(summary_week_start_col + latest_week_index)
+        previous_week_days = report_week_days[ordered_report_weeks[previous_week_index]]
+        latest_week_days = report_week_days[ordered_report_weeks[latest_week_index]]
+        revenue_change_formula = (
+            f"=IFERROR((SUM(Summary!{latest_week_col}23:{latest_week_col}29)/{latest_week_days})/"
+            f"(SUM(Summary!{previous_week_col}23:{previous_week_col}29)/{previous_week_days})-1,0)"
+        )
+    else:
+        revenue_change_formula = None
+
     callouts = [
         ("B12:F12", "LEADING REVENUE CATEGORY", "B13:F13", f'=IFERROR(INDEX(calculations!$G${dimension_start}:$G${dimension_start + len(purchase_categories) - 1},MATCH(MAX(calculations!$H${dimension_start}:$H${dimension_start + len(purchase_categories) - 1}),calculations!$H${dimension_start}:$H${dimension_start + len(purchase_categories) - 1},0)),"No data")'),
         ("G12:K12", "TOP REVENUE BUNDLE", "G13:K13", f"=calculations!N{dimension_start}"),
@@ -379,14 +372,40 @@ def add_dashboard_sheet(
         ws.merge_cells(value_range)
         label_cell = ws[label_range.split(":")[0]]
         label_cell.value = label
-        label_cell.font = Font(name="Aptos", size=8, bold=True, color="9A6B00")
-        label_cell.alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
+        label_cell.font = Font(name="Aptos", size=9, bold=True, color="FFFFFF")
+        label_cell.fill = PatternFill("solid", fgColor="006341")
+        label_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, shrink_to_fit=True, indent=1)
         value_cell = ws[value_range.split(":")[0]]
         value_cell.value = formula
         value_cell.font = Font(name="Aptos", size=11, bold=True, color="006341")
-        value_cell.alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
+        value_cell.fill = PatternFill("solid", fgColor="F1F8F4")
+        value_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False, shrink_to_fit=True, indent=1)
+        for cell_range in (label_range, value_range):
+            for row in ws[cell_range]:
+                for cell in row:
+                    cell.border = THIN_BORDER
         if label == "AVERAGE DAILY REVENUE":
             value_cell.number_format = '#,##0.00 "ETB"'
+
+    ws.merge_cells("L14:P14")
+    revenue_change = ws["L14"]
+    revenue_change.value = revenue_change_formula or "Need 2+ weeks"
+    revenue_change.number_format = '+0.0% "vs prior week";-0.0% "vs prior week";0.0% "vs prior week"'
+    revenue_change.font = Font(name="Aptos", size=9, bold=True, color="FFFFFF")
+    revenue_change.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
+    revenue_change.fill = PatternFill("solid", fgColor="64748B")
+    for row in ws["L14:P14"]:
+        for cell in row:
+            cell.border = THIN_BORDER
+    if revenue_change_formula:
+        ws.conditional_formatting.add(
+            "L14",
+            CellIsRule(operator="lessThan", formula=["0"], fill=PatternFill("solid", fgColor="C00000"), font=Font(color="FFFFFF", bold=True)),
+        )
+        ws.conditional_formatting.add(
+            "L14",
+            CellIsRule(operator="greaterThanOrEqual", formula=["0"], fill=PatternFill("solid", fgColor="00843D"), font=Font(color="FFFFFF", bold=True)),
+        )
 
     def add_chart(
         chart,
@@ -400,6 +419,7 @@ def add_dashboard_sheet(
         doughnut=False,
         x_axis_title=None,
         y_axis_title=None,
+        value_format="#,##0",
     ):
         chart.add_data(Reference(calc_ws, min_col=data_col, min_row=trend_header, max_row=last_row), titles_from_data=True)
         chart.set_categories(Reference(calc_ws, min_col=category_col, min_row=first_row, max_row=last_row))
@@ -407,6 +427,19 @@ def add_dashboard_sheet(
         if not doughnut:
             chart.x_axis.title = x_axis_title
             chart.y_axis.title = y_axis_title
+            chart.x_axis.delete = False
+            chart.y_axis.delete = False
+            chart.x_axis.majorTickMark = "out"
+            chart.y_axis.majorTickMark = "out"
+            if isinstance(chart, LineChart) or (isinstance(chart, BarChart) and chart.type == "col"):
+                chart.x_axis.tickLblPos = "low"
+                chart.x_axis.numFmt = NumFmt(formatCode="d-mmm", sourceLinked=False)
+                chart.y_axis.tickLblPos = "nextTo"
+                chart.y_axis.numFmt = NumFmt(formatCode=value_format, sourceLinked=False)
+            else:
+                chart.x_axis.tickLblPos = "nextTo"
+                chart.x_axis.numFmt = NumFmt(formatCode=value_format, sourceLinked=False)
+                chart.y_axis.tickLblPos = "low"
         chart.style = 10
         chart.height = 7.4
         chart.width = 13.5
@@ -454,101 +487,23 @@ def add_dashboard_sheet(
     category_end_row = dimension_start + len(purchase_categories) - 1
     top_bundle_end_row = dimension_start + min(10, len(bundle_names)) - 1
     top_traffic_end_row = dimension_start + min(10, len(traffic_names)) - 1
-    add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)")
+    add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)", value_format="#,##0")
     quantity_chart = BarChart()
     quantity_chart.type = "col"
-    add_chart(quantity_chart, 5, 2, "Bundle Purchase Quantity", "I15", "F6C445", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Quantity")
-    add_chart(LineChart(), 6, 2, "Traffic Trend | GB", "B31", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Traffic (GB)")
+    add_chart(quantity_chart, 5, 2, "Bundle Purchase Quantity", "I15", "F6C445", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Quantity", value_format="#,##0")
+    add_chart(LineChart(), 6, 2, "Traffic Trend | GB", "B31", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Traffic (GB)", value_format="#,##0.0")
     add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859", dimension_start, category_end_row, doughnut=True)
     bundle_chart = BarChart()
     bundle_chart.type = "bar"
-    add_chart(bundle_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341", dimension_start, top_bundle_end_row, x_axis_title="Revenue (ETB)", y_axis_title="Bundle")
+    add_chart(bundle_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341", dimension_start, top_bundle_end_row, x_axis_title="Revenue (ETB)", y_axis_title="Bundle", value_format="#,##0")
     traffic_chart = BarChart()
     traffic_chart.type = "bar"
-    add_chart(traffic_chart, 22, 21, "Top Bundles by Traffic", "I47", "F6C445", dimension_start, top_traffic_end_row, x_axis_title="Traffic (GB)", y_axis_title="Bundle")
-
-    weekly_table_title_row = 64
-    weekly_table_header_row = weekly_table_title_row + 1
-    weekly_table_start_row = weekly_table_header_row + 1
-    ws.merge_cells(start_row=weekly_table_title_row, start_column=2, end_row=weekly_table_title_row, end_column=16)
-    ws.cell(weekly_table_title_row, 2, "WEEK-ON-WEEK PERFORMANCE")
-    ws.cell(weekly_table_title_row, 2).font = Font(name="Aptos Display", size=12, bold=True, color="FFFFFF")
-    ws.cell(weekly_table_title_row, 2).fill = PatternFill("solid", fgColor="006341")
-    for col in range(2, 17):
-        ws.cell(weekly_table_title_row, col).fill = PatternFill("solid", fgColor="006341")
-
-    weekly_columns = [
-        (2, 4, "REPORTING WEEK", 23),
-        (5, 7, "REVENUE (ETB)", 24),
-        (8, 10, "REVENUE CHANGE VS PRIOR WEEK", 25),
-        (11, 13, "PURCHASE QUANTITY", 26),
-        (14, 16, "TRAFFIC (GB)", 27),
-    ]
-    for first_col, last_col, heading, _ in weekly_columns:
-        ws.merge_cells(start_row=weekly_table_header_row, start_column=first_col, end_row=weekly_table_header_row, end_column=last_col)
-        header_cell = ws.cell(weekly_table_header_row, first_col, heading)
-        header_cell.font = Font(name="Aptos", size=8, bold=True, color="FFFFFF")
-        header_cell.fill = PatternFill("solid", fgColor="287A58")
-        header_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True, shrink_to_fit=True)
-        for col in range(first_col, last_col + 1):
-            ws.cell(weekly_table_header_row, col).fill = PatternFill("solid", fgColor="287A58")
-
-    for week_index in range(len(weekly_periods)):
-        row_idx = weekly_table_start_row + week_index
-        source_row = weekly_start_row + week_index
-        for first_col, last_col, _, source_col in weekly_columns:
-            ws.merge_cells(start_row=row_idx, start_column=first_col, end_row=row_idx, end_column=last_col)
-            cell = ws.cell(row_idx, first_col, f"=calculations!{get_column_letter(source_col)}{source_row}")
-            cell.font = Font(name="Aptos", size=10, bold=source_col == 25, color="24332D")
-            cell.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
-            cell.fill = PatternFill("solid", fgColor="F1F8F4" if week_index % 2 == 0 else "FFFFFF")
-            cell.border = THIN_BORDER
-        ws.cell(row_idx, 5).number_format = '#,##0.00 "ETB"'
-        ws.cell(row_idx, 8).number_format = "0.0%;[Red]-0.0%"
-        ws.cell(row_idx, 11).number_format = "#,##0"
-        ws.cell(row_idx, 14).number_format = '#,##0.0 "GB"'
-        ws.row_dimensions[row_idx].height = 23
-
-    weekly_last_row = weekly_table_start_row + len(weekly_periods) - 1
-    red_fill = PatternFill("solid", fgColor="FCE4D6")
-    green_fill = PatternFill("solid", fgColor="E2F0D9")
-    red_font = Font(color="C00000", bold=True)
-    green_font = Font(color="006100", bold=True)
-    if weekly_periods:
-        calc_week_change = f"Y{weekly_start_row}:Y{weekly_start_row + len(weekly_periods) - 1}"
-        dashboard_week_change = f"H{weekly_table_start_row}:H{weekly_last_row}"
-        for sheet, cell_range in ((calc_ws, calc_week_change), (ws, dashboard_week_change)):
-            sheet.conditional_formatting.add(cell_range, CellIsRule(operator="lessThan", formula=["0"], fill=red_fill, font=red_font))
-            sheet.conditional_formatting.add(cell_range, CellIsRule(operator="greaterThanOrEqual", formula=["0"], fill=green_fill, font=green_font))
-
-    weekly_chart = BarChart()
-    weekly_chart.type = "col"
-    weekly_chart_data_end = trend_header + len(weekly_periods)
-    weekly_chart_anchor_row = weekly_table_start_row + len(weekly_periods) + 2
-    add_chart(
-        weekly_chart,
-        24,
-        23,
-        "Weekly Revenue Comparison | ETB",
-        f"B{weekly_chart_anchor_row}",
-        "00A859",
-        weekly_start_row,
-        weekly_chart_data_end,
-        x_axis_title="Reporting week",
-        y_axis_title="Revenue (ETB)",
-    )
-    weekly_chart.width = 27
-    weekly_chart.height = 9
+    add_chart(traffic_chart, 22, 21, "Top Bundles by Traffic", "I47", "F6C445", dimension_start, top_traffic_end_row, x_axis_title="Traffic (GB)", y_axis_title="Bundle", value_format="#,##0.0")
 
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.print_area = f"B2:P{weekly_chart_anchor_row + 18}"
-    if weekly_periods:
-        calc_ws.conditional_formatting.add(
-            f"Y{weekly_start_row + 1}:Y{weekly_start_row + len(weekly_periods) - 1}",
-            CellIsRule(operator="lessThan", formula=["0"], fill=red_fill, font=red_font),
-        )
+    ws.page_setup.fitToHeight = 2
+    ws.print_area = "B2:P63"
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
     wb.calculation.calcMode = "auto"
@@ -1019,6 +974,52 @@ def create_excel(
             cell.fill = RATE_FILL
             cell.border = THIN_BORDER
 
+    summary_week_groups = {}
+    for idx, report_date in enumerate(sorted_dates):
+        week_key = (report_date.isocalendar().year, report_date.isocalendar().week)
+        summary_week_groups.setdefault(week_key, []).append(summary_start_col + idx)
+
+    summary_week_columns = []
+    for week_index, (week_key, daily_columns) in enumerate(sorted(summary_week_groups.items())):
+        week_col = summary_start_col + len(sorted_dates) + week_index
+        summary_week_columns.append(week_col)
+        week_label = f"Wk{week_key[1]}"
+        ws_summary.cell(2, week_col, "WEEKLY").font = Font(bold=True, color="006341")
+        ws_summary.cell(3, week_col, week_label).font = Font(bold=True, color="006341")
+        ws_summary.cell(2, week_col).alignment = Alignment(horizontal="center")
+        ws_summary.cell(3, week_col).alignment = Alignment(horizontal="center")
+        first_daily_col = get_column_letter(min(daily_columns))
+        last_daily_col = get_column_letter(max(daily_columns))
+
+        for header_row in (4, 13, 22, 31, 41):
+            header_cell = ws_summary.cell(header_row, week_col, week_label)
+            header_cell.font = Font(bold=True)
+            header_cell.fill = HEADER_FILL
+            header_cell.border = THIN_BORDER
+            header_cell.alignment = Alignment(horizontal="center")
+
+        for row_idx in range(5, 12):
+            ws_summary.cell(row_idx, week_col, f"=AVERAGE({first_daily_col}{row_idx}:{last_daily_col}{row_idx})")
+        for row_idx in list(range(14, 21)) + list(range(23, 30)) + list(range(32, 39)):
+            ws_summary.cell(row_idx, week_col, f"=SUM({first_daily_col}{row_idx}:{last_daily_col}{row_idx})")
+        for row_idx in range(42, 49):
+            revenue_row = row_idx - 19
+            traffic_row = row_idx - 10
+            week_letter = get_column_letter(week_col)
+            ws_summary.cell(row_idx, week_col, f'=IFERROR({week_letter}{revenue_row}/{week_letter}{traffic_row}*1024,"")')
+
+        for row_idx in list(range(5, 12)) + list(range(14, 21)) + list(range(23, 30)) + list(range(32, 39)) + list(range(42, 49)):
+            cell = ws_summary.cell(row_idx, week_col)
+            cell.number_format = RATE_FORMAT if 42 <= row_idx <= 48 else NUM_FORMAT
+            cell.border = THIN_BORDER
+            if 42 <= row_idx <= 48:
+                cell.fill = RATE_FILL
+
+    ws_summary.column_dimensions["B"].hidden = True
+    for col_idx in range(summary_start_col + len(sorted_dates), summary_start_col + len(sorted_dates) + len(summary_week_columns)):
+        ws_summary.column_dimensions[get_column_letter(col_idx)].width = 14
+    ws_summary.freeze_panes = f"{get_column_letter(summary_start_col)}5"
+
     ws_summary.column_dimensions["B"].width = 24
     ws_summary.column_dimensions["C"].width = 24
     ws_summary.column_dimensions["D"].width = 14
@@ -1285,10 +1286,4 @@ def create_pdf(
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-            ])
-        )
-        content.append(cat_table)
-
-    document.build(content)
-    return output
+                ("ALIGN", (1, 1), (-1, -1), "RIG
