@@ -6,6 +6,7 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
+from openpyxl.chart.axis import TextAxis
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 from openpyxl.chart.marker import Marker
@@ -29,47 +30,53 @@ REPORT_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_BUNDLES = [
     {
         "name": "A.20B_700MIN_WEEKLY_ONNET_VOICE",
-        "display_name": "20 Birr 700-Minute Weekly On-Net",
+        "display_name": "20 ETB Weekly On-Net | 700 min",
         "category": "Weekly Voice",
         "price": 20,
         "validity": "7 days",
     },
     {
         "name": "B.CBU_UNLTD_WEEKLY_COMBO_20BIRR_4032MIN",
-        "display_name": "20 Birr Unlimited Weekly Combo",
+        "display_name": "20 ETB Weekly Combo | 4,032 min",
         "category": "Weekly Voice",
         "price": 20,
         "validity": "7 days",
     },
     {
         "name": "C.5Br_Unlimited_Safari_Minutes_FUP_DEFAULT",
-        "display_name": "5 Birr Unlimited Safari Minutes",
+        "display_name": "5 ETB Daily Safari | Unlimited*",
         "category": "Daily Voice",
         "price": 5,
         "validity": "24 hours",
     },
     {
         "name": "D.CBU_UNLTD_DAILY_COMBO_5BIRR_1440MIN",
-        "display_name": "5 Birr Unlimited Daily Combo",
+        "display_name": "5 ETB Daily Combo | 1,440 min",
         "category": "Daily Voice",
         "price": 5,
         "validity": "24 hours",
     },
     {
         "name": "E.CBU_UNLTD_HOURLY_COMBO_2BIRR_120MIN",
-        "display_name": "2 Birr Hourly Combo",
+        "display_name": "2 ETB Hourly Combo | 120 min",
         "category": "Hourly Voice",
         "price": 2,
         "validity": "2 hours",
     },
     {
         "name": "F.FriendsAndFamily",
-        "display_name": "Friends and Family",
+        "display_name": "1 ETB Friends & Family | 24 h",
         "category": "Other Voice",
         "price": 1,
         "validity": "24 hours",
     },
 ]
+VOICE_BUNDLES_BY_NAME = {bundle["name"]: bundle for bundle in VOICE_BUNDLES}
+
+
+def _display_voice_bundle(bundle_name):
+    bundle = VOICE_BUNDLES_BY_NAME.get(bundle_name)
+    return bundle["display_name"] if bundle else "Other voice bundle"
 
 METRIC_SHEETS = {
     "A.SUBS": "SUBS",
@@ -192,18 +199,33 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         value_cell.alignment = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells("B10:P10")
-    ws["B10"] = "Subscriber counts are distinct per bundle; the rate is total voice minutes per summed bundle-subscriber day."
+    ws["B10"] = (
+        "Subscriber counts are distinct per bundle. *Unlimited voice is subject to "
+        "the Fair Usage Policy (FUP). Bundle names show price, allowance and validity."
+    )
     ws["B10"].font = Font(name="Aptos", size=9, italic=True, color="64748B")
 
-    headers = [
-        "Date", "Revenue (ETB)", "Bundle Subscribers", "Purchase Quantity", "Voice Minutes",
-        "Category", "Revenue (ETB)", None, "Bundle", "Revenue (ETB)", "Rank",
-        "Top Revenue Bundle", "Revenue (ETB)", None, "Voice Bundle", "Voice Minutes", "Rank",
-        "Top Voice Bundle", "Voice Minutes",
-    ]
-    for column, label in enumerate(headers, start=2):
-        if label:
-            calculations.cell(3, column, label)
+    headers = {
+        2: "Date",
+        3: "Revenue (ETB)",
+        4: "Bundle Subscribers",
+        5: "Purchase Quantity",
+        6: "Voice Minutes",
+        7: "Category",
+        8: "Revenue (ETB)",
+        10: "Bundle",
+        11: "Revenue (ETB)",
+        12: "Rank",
+        14: "Top Revenue Bundle",
+        15: "Revenue (ETB)",
+        17: "Voice Bundle",
+        18: "Voice Minutes",
+        19: "Rank",
+        21: "Top Voice Bundle",
+        22: "Voice Minutes",
+    }
+    for column, label in headers.items():
+        calculations.cell(3, column, label)
     for cell_range, label in (
         ("B1:F1", "DAILY PERFORMANCE"),
         ("G1:H1", "REVENUE BY CATEGORY"),
@@ -243,7 +265,7 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         ("USAGE", "F"),
     )
     for row, (report_date, summary_col) in enumerate(zip(dates, daily_columns), start=4):
-        calculations.cell(row, 2, report_date).number_format = "d-mmm"
+        calculations.cell(row, 2, report_date.strftime("%d-%b"))
         for metric, target_col in metric_columns:
             calculations.cell(
                 row,
@@ -265,7 +287,8 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
     last_bundle_row = revenue_start + len(bundles) - 1
     for offset, bundle_name in enumerate(bundles):
         row = revenue_start + offset
-        calculations.cell(row, 10, bundle_name)
+        display_name = _display_voice_bundle(bundle_name)
+        calculations.cell(row, 10, display_name)
         revenue_cells = ",".join(
             "'Summary'!{}{}".format(
                 get_column_letter(column),
@@ -275,7 +298,7 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         )
         calculations.cell(row, 11, f"=SUM({revenue_cells})")
         calculations.cell(row, 12, f"=RANK(K{row},$K${revenue_start}:$K${last_bundle_row},0)+COUNTIF($K${revenue_start}:K{row},K{row})-1")
-        calculations.cell(row, 17, bundle_name)
+        calculations.cell(row, 17, display_name)
         voice_cells = ",".join(
             "'Summary'!{}{}".format(
                 get_column_letter(column),
@@ -330,12 +353,22 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         else:
             chart.x_axis.title = x_axis_title
             chart.y_axis.title = y_axis_title
-            chart.x_axis.numFmt = value_format
-            chart.y_axis.numFmt = value_format
             chart.x_axis.delete = False
             chart.y_axis.delete = False
             chart.x_axis.majorTickMark = "out"
             chart.y_axis.majorTickMark = "out"
+            if isinstance(chart, LineChart) or (
+                isinstance(chart, BarChart) and chart.type == "col"
+            ):
+                chart.x_axis = TextAxis()
+                chart.x_axis.title = x_axis_title
+                chart.y_axis.title = y_axis_title
+                chart.x_axis.tickLblPos = "low"
+                chart.x_axis.tickLblSkip = max(1, (len(dates) + 11) // 12)
+                chart.x_axis.tickMarkSkip = max(1, (len(dates) + 11) // 12)
+                chart.y_axis.numFmt = value_format
+            else:
+                chart.x_axis.numFmt = value_format
             chart.legend = None
             if chart.series:
                 chart.series[0].graphicalProperties.solidFill = color
@@ -608,7 +641,7 @@ def create_voice_excel(
                 ws.cell(total_row, col).fill = SUBTOTAL_FILL
 
         ws.column_dimensions["A"].width = 3
-        ws.column_dimensions["B"].width = 34
+        ws.column_dimensions["B"].width = 42
         ws.column_dimensions["C"].width = 22
         ws.column_dimensions["D"].width = 14
         ws.column_dimensions["E"].width = 16
@@ -616,6 +649,11 @@ def create_voice_excel(
             ws.column_dimensions[get_column_letter(col)].width = 15
         ws.column_dimensions[get_column_letter(separator_column)].width = 3
         ws.freeze_panes = f"{get_column_letter(daily_columns[0])}{data_start_row}"
+        for bundle_row in bundle_rows.values():
+            ws.cell(bundle_row, 2).alignment = Alignment(
+                vertical="center", wrap_text=True
+            )
+            ws.row_dimensions[bundle_row].height = 30
         ws.sheet_view.showGridLines = False
         ws.sheet_properties.tabColor = "006341"
         row_maps[metric_code] = {
@@ -885,12 +923,18 @@ def create_voice_excel(
         summary.cell(row_index, separator_column).fill = PatternFill()
     summary.column_dimensions["A"].width = 3
     summary.column_dimensions["B"].width = 24
-    summary.column_dimensions["C"].width = 38
+    summary.column_dimensions["C"].width = 46
     summary.column_dimensions["D"].width = 14
     summary.column_dimensions["E"].width = 22
     for col in daily_columns + weekly_columns:
         summary.column_dimensions[get_column_letter(col)].width = 15
     summary.column_dimensions[get_column_letter(separator_column)].width = 3
+    for metric_section in summary_metric_rows.values():
+        for bundle_row in metric_section["bundles"].values():
+            summary.cell(bundle_row, 3).alignment = Alignment(
+                vertical="center", wrap_text=True
+            )
+            summary.row_dimensions[bundle_row].height = 30
     summary.freeze_panes = f"{get_column_letter(daily_columns[0])}{summary_header_row + 1}"
     summary.sheet_view.showGridLines = False
     summary.sheet_properties.tabColor = "006341"

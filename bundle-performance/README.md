@@ -6,7 +6,7 @@ Automated daily reporting pipeline and interactive Excel dashboard for Safaricom
 
 ## 🎯 Project Overview & Procedure
 
-The application separates **Data Performance** and **Voice Performance** reporting. Data reports are named `Data_Performance_...`; voice reports are named `Voice_Performance_...`. Reusable Excel formatting helpers are in `services/shared/`, with report code organized under `services/data/` and `services/voice/`.
+The application separates **Data Performance** and **Voice Performance** reporting. Data reports are named `Data_Performance_...`; voice reports are named `Voice_Performance_...`. Reusable Excel formatting helpers are in `services/shared/`, with report code organized under `services/data/` and `services/voice/`. Voice dashboards are delivered in the generated Excel workbook; no Streamlit voice dashboard is required.
 
 This project automates the end-to-end data processing, quality assurance, multi-tab Excel reporting dashboard, and email distribution:
 
@@ -83,11 +83,11 @@ uv run python bundle_performance.py --send
 Set up a Windows Task Scheduler action pointing to `bundle_performance.bat` to run automatically every morning unattended.
 
 ### 4. Voice Performance Excel Report
-The voice report runs the three sections in `sql/voice_performance.sql` against Oracle and generates a separate `Voice_Performance_...xlsx` workbook with `Dashboard`, `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `VOICE MINUTES` sheets. Daily and ISO-week comparisons use the shared conditional coloring; voice subscriber weekly values are average daily subscribers. Source-data tabs are hidden by default.
+The voice report runs the three sections in `sql/voice_performance.sql` against Oracle and generates a separate `Voice_Performance_...xlsx` workbook with a Data-style `Dashboard` (five KPI cards and six charts), `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `VOICE MINUTES` sheets. Daily and ISO-week comparisons use the shared conditional coloring; voice subscriber weekly values are average daily subscribers. Source-data and dashboard-calculation tabs are hidden by default.
 
 Run from the project directory:
 ```cmd
 uv run python voice_performance.py --start=20261019 --end=20261030
 ```
 
-In the Streamlit dashboard, select **Oracle (Production)** and click **Generate Voice Performance Report**. The local DuckDB sample database does not contain voice source tables.
+The local DuckDB sample database does not contain voice source tables, so voice report generation requires Oracle credentials.

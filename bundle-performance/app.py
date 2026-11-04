@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # PAGE CONFIGURATION & STYLING
 # ============================================================
 st.set_page_config(
-    page_title="Safaricom | Voice & Data Performance",
+    page_title="Safaricom | Bundle Performance Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -203,8 +203,8 @@ if run_queries:
 # ============================================================
 head_col1, head_col2 = st.columns([3, 1])
 with head_col1:
-    st.title("📊 Voice & Data Performance")
-    st.caption("Separate performance dashboards and Excel reports for data and voice bundles.")
+    st.title("📊 Bundle Performance Dashboard")
+    st.caption("Daily Tracking, Subscriber Metrics, Usage Analytics & Automated Scheduling")
 with head_col2:
     current_src = st.session_state.get("actual_source", "DuckDB (Sample Mode)")
     badge_class = "badge-success" if "DuckDB" in current_src else "badge-info"
