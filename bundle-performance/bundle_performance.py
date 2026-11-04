@@ -30,12 +30,12 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from services.database import get_latest_sample_date, load_bundle_data
+from services.data.database import get_latest_sample_date, load_bundle_data
 from services.etl_service import (
     verify_data_completeness,
     populate_bundle_purchase_table,
 )
-from services.report import create_excel
+from services.data.report import create_excel
 from services.email_service import is_outlook_running
 
 print("\n" + "=" * 70)
@@ -198,7 +198,9 @@ archives_folder.mkdir(parents=True, exist_ok=True)
 
 # Move old xlsx reports to Archives
 for old_report in reports_folder.iterdir():
-    is_report = old_report.name.startswith(("Bundle_Performance_", "bundle_performance_"))
+    is_report = old_report.name.startswith(
+        ("Data_Performance_", "Bundle_Performance_", "bundle_performance_")
+    )
     if old_report.is_file() and is_report and old_report.suffix.lower() in {".xlsx", ".pdf"}:
         dest_path = archives_folder / old_report.name
         try:

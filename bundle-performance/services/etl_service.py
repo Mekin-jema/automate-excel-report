@@ -10,7 +10,7 @@ import re
 import duckdb
 import pandas as pd
 
-from services.database import get_oracle_connection
+from services.shared.database import get_oracle_connection
 from services.dummy_db import DB_PATH, init_dummy_database, BUNDLE_CATALOG
 
 BASE_DIR = Path(__file__).resolve().parents[1]

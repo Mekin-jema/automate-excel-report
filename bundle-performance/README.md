@@ -1,10 +1,12 @@
-# Safaricom Ethiopia | Bundle Performance Reporting Automation
+# Safaricom Ethiopia | Voice & Data Performance Reporting
 
 Automated daily reporting pipeline and interactive Excel dashboard for Safaricom Ethiopia Bundle Performance, adapted directly from the sample implementation pattern (`sample/sales_performance.py` and `sample/sales_performance.xlsx`).
 
 ---
 
 ## 🎯 Project Overview & Procedure
+
+The application separates **Data Performance** and **Voice Performance** reporting. Data reports are named `Data_Performance_...`; voice reports are named `Voice_Performance_...`. Reusable Excel formatting helpers are in `services/shared/`, with report code organized under `services/data/` and `services/voice/`.
 
 This project automates the end-to-end data processing, quality assurance, multi-tab Excel reporting dashboard, and email distribution:
 
@@ -34,7 +36,7 @@ This project automates the end-to-end data processing, quality assurance, multi-
 
 4. **Step 4: Clean Date-Range Excel Dashboard**
    - Builds a fresh workbook for the requested period; it does not carry forward old template values or pivot caches.
-   - `Dashboard` has formula-linked revenue, subscriber, quantity, and traffic KPIs plus six charts.
+   - The data `Dashboard` has formula-linked revenue, subscriber, quantity, and traffic KPIs plus six charts; the voice workbook also includes its own formula-linked KPI dashboard and daily/category/bundle charts.
    - `calculations` contains Excel formulas that read the raw `BUNDLE PURCHASE` and `TRAFFIC_DATA` sheets.
    - Visible bundle labels are business-friendly; the technical identifier is retained separately as `NCCID`.
    - Daily and ISO-week values appear in separate comparison sections on `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `TRAFFIC`; increases/decreases are highlighted and subscriber weekly values use the existing average-daily logic.
@@ -79,3 +81,13 @@ uv run python bundle_performance.py --send
 
 ### 3. Windows Task Scheduler (Daily 08:00 AM Run)
 Set up a Windows Task Scheduler action pointing to `bundle_performance.bat` to run automatically every morning unattended.
+
+### 4. Voice Performance Excel Report
+The voice report runs the three sections in `sql/voice_performance.sql` against Oracle and generates a separate `Voice_Performance_...xlsx` workbook with `Dashboard`, `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `VOICE MINUTES` sheets. Daily and ISO-week comparisons use the shared conditional coloring; voice subscriber weekly values are average daily subscribers. Source-data tabs are hidden by default.
+
+Run from the project directory:
+```cmd
+uv run python voice_performance.py --start=20261019 --end=20261030
+```
+
+In the Streamlit dashboard, select **Oracle (Production)** and click **Generate Voice Performance Report**. The local DuckDB sample database does not contain voice source tables.

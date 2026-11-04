@@ -1,7 +1,7 @@
 import argparse
 
-from services.database import load_bundle_data
-from services.report import create_excel
+from services.data.database import load_bundle_data
+from services.data.report import create_excel
 from services.email_service import send_outlook_email
 
 

@@ -6,8 +6,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from services.database import load_bundle_data
-from services.report import create_excel
+from services.data.database import load_bundle_data
+from services.data.report import create_excel
 from services.email_service import send_outlook_email, is_outlook_running
 from services.scheduler import (
     load_schedule_config,
@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # PAGE CONFIGURATION & STYLING
 # ============================================================
 st.set_page_config(
-    page_title="Safaricom | Bundle Performance Dashboard",
+    page_title="Safaricom | Voice & Data Performance",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -112,7 +112,7 @@ st.markdown("""
 # ============================================================
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Safaricom_logo.svg/320px-Safaricom_logo.svg.png", width=180) if False else st.markdown("### 🟢 **Safaricom Ethiopia**")
-    st.subheader("Data & Query Controls")
+    st.subheader("Voice & Data Controls")
 
     # 1. Data Source Selection
     data_source_mode = st.radio(
@@ -149,7 +149,6 @@ with st.sidebar:
         end_date = st.date_input("End Date", value=today)
 
     run_queries = st.button("🚀 Run SQL Queries", type="primary", use_container_width=True)
-
     st.divider()
 
     # Outlook Desktop Status
@@ -159,7 +158,7 @@ with st.sidebar:
     else:
         st.markdown("⚪ **Outlook:** Client Not Running")
 
-    st.caption("Bundle Performance Reporting Engine v2.0")
+    st.caption("Voice & Data Performance Reporting Engine")
 
 
 # ============================================================
@@ -199,14 +198,13 @@ if run_queries:
         except Exception as error:
             st.sidebar.error(f"Execution failed: {error}")
 
-
 # ============================================================
 # HEADER
 # ============================================================
 head_col1, head_col2 = st.columns([3, 1])
 with head_col1:
-    st.title("📊 Bundle Performance Dashboard")
-    st.caption("Daily Tracking, Subscriber Metrics, Usage Analytics & Automated Scheduling")
+    st.title("📊 Voice & Data Performance")
+    st.caption("Separate performance dashboards and Excel reports for data and voice bundles.")
 with head_col2:
     current_src = st.session_state.get("actual_source", "DuckDB (Sample Mode)")
     badge_class = "badge-success" if "DuckDB" in current_src else "badge-info"
@@ -214,7 +212,7 @@ with head_col2:
 
 # Tabs
 tab_report, tab_schedule, tab_data = st.tabs([
-    "📈 Daily Performance Report",
+    "📶 Data Performance",
     "⏰ Schedule Dashboard",
     "🔍 Data & Query Inspector",
 ])
@@ -329,7 +327,7 @@ with tab_report:
             st.download_button(
                 "📥 Download Excel Report (.xlsx)",
                 excel_bytes,
-                file_name=f"Bundle_Performance_{start_k}_{end_k}.xlsx",
+                file_name=f"Data_Performance_{start_k}_{end_k}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
@@ -342,8 +340,8 @@ with tab_report:
                 else:
                     try:
                         res = send_outlook_email(
-                            subject=f"Bundle Performance Report [{start_k} - {end_k}]",
-                            body="Hello,\n\nPlease find attached the daily Bundle Performance Report.\n\nBest regards,\nMekin Jemal",
+                            subject=f"Data Performance Report [{start_k} - {end_k}]",
+                            body="Hello,\n\nPlease find attached the daily Data Performance Report.\n\nBest regards,\nMekin Jemal",
                             attachments=[st.session_state.excel],
                             to=cfg.get("to_emails"),
                             cc=cfg.get("cc_emails"),
@@ -506,7 +504,7 @@ with tab_schedule:
 with tab_data:
     st.subheader("🔍 Data & Query Inspector")
 
-    sub_t1, sub_t2, sub_t3 = st.tabs(["Bundle Purchases Table", "Bundle Usage Table", "SQL Query Source"])
+    sub_t1, sub_t2, sub_t3 = st.tabs(["Data Purchases", "Data Usage", "SQL Sources"])
 
     with sub_t1:
         if "purchases" in st.session_state:
@@ -525,10 +523,14 @@ with tab_data:
             st.info("Run queries to inspect usage data.")
 
     with sub_t3:
-        st.markdown("##### 📄 `sql/bundle_purchase.sql`")
+        st.markdown("##### 📄 Data SQL")
+        st.markdown("`sql/bundle_purchase.sql`")
         purchase_sql_code = (BASE_DIR / "sql" / "bundle_purchase.sql").read_text(encoding="utf-8")
         st.code(purchase_sql_code, language="sql")
 
-        st.markdown("##### 📄 `sql/bundle_usage.sql`")
+        st.markdown("`sql/bundle_usage.sql`")
         usage_sql_code = (BASE_DIR / "sql" / "bundle_usage.sql").read_text(encoding="utf-8")
         st.code(usage_sql_code, language="sql")
+        st.markdown("##### 📄 Voice SQL")
+        voice_sql_code = (BASE_DIR / "sql" / "voice_performance.sql").read_text(encoding="utf-8")
+        st.code(voice_sql_code, language="sql")
