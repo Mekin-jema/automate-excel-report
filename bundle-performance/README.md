@@ -37,7 +37,8 @@ This project automates the end-to-end data processing, quality assurance, multi-
    - `Dashboard` has formula-linked revenue, subscriber, quantity, and traffic KPIs plus six charts.
    - `calculations` contains Excel formulas that read the raw `BUNDLE PURCHASE` and `TRAFFIC_DATA` sheets.
    - Visible bundle labels are business-friendly; the technical identifier is retained separately as `NCCID`.
-   - Includes `Summary`, `SUBS`, `QUTY`, `REVENUE`, `TRAFFIC`, `BUNDLE PURCHASE`, and `TRAFFIC_DATA` detail sheets.
+   - Daily and ISO-week values appear in separate comparison sections on `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `TRAFFIC`; increases/decreases are highlighted and subscriber weekly values use the existing average-daily logic.
+   - `BUNDLE PURCHASE`, `TRAFFIC_DATA`, and `calculations` are hidden by default and can be unhidden in Excel.
 
 5. **Step 5: Sharing by Outlook Mail**
    - Generates an executive HTML email with formatted KPI cards and status indicators.
@@ -78,4 +79,3 @@ uv run python bundle_performance.py --send
 
 ### 3. Windows Task Scheduler (Daily 08:00 AM Run)
 Set up a Windows Task Scheduler action pointing to `bundle_performance.bat` to run automatically every morning unattended.
-

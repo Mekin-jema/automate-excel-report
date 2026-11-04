@@ -23,7 +23,7 @@ from openpyxl.chart.marker import Marker
 from openpyxl.chart.text import RichText
 from openpyxl.chart.data_source import NumFmt
 from openpyxl.drawing.text import CharacterProperties, Paragraph as DrawingParagraph, ParagraphProperties, RichTextProperties
-from openpyxl.formatting.rule import CellIsRule, DataBarRule
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -67,6 +67,11 @@ BUNDLE_SPECS = [
 HEADER_FILL = PatternFill(start_color="C0E4F5", end_color="C0E4F5", fill_type="solid")
 SUBTOTAL_FILL = PatternFill(start_color="EAF2F8", end_color="EAF2F8", fill_type="solid")
 RATE_FILL = PatternFill(start_color="D5F5E3", end_color="D5F5E3", fill_type="solid")
+COMPARISON_FILLS = {
+    "increase": PatternFill("solid", fgColor="FFDCFCE7"),
+    "decrease": PatternFill("solid", fgColor="FFFEE2E2"),
+    "neutral": PatternFill("solid", fgColor="FFFFFFFF"),
+}
 
 THIN_BORDER = Border(
     left=Side(style="thin", color="D0D7DE"),
@@ -74,9 +79,68 @@ THIN_BORDER = Border(
     top=Side(style="thin", color="D0D7DE"),
     bottom=Side(style="thin", color="D0D7DE"),
 )
+TOTAL_BORDER = Border(
+    left=Side(style="thin", color="006341"),
+    right=Side(style="thin", color="006341"),
+    top=Side(style="medium", color="006341"),
+    bottom=Side(style="medium", color="006341"),
+)
 
 NUM_FORMAT = r'_(* #,##0_);_(* \(#,##0\);_(* "-"??_);_(@_)'
 RATE_FORMAT = "0.00"
+
+
+def group_columns_by_iso_week(dates, first_column):
+    """Return ISO-week groups paired with their worksheet column indexes."""
+    grouped_columns = {}
+    for offset, date_value in enumerate(dates):
+        iso_date = date_value.isocalendar()
+        week_key = (iso_date.year, iso_date.week)
+        grouped_columns.setdefault(week_key, []).append(first_column + offset)
+    return list(sorted(grouped_columns.items()))
+
+
+def weekly_aggregation_formula(row, columns, aggregation):
+    first_column = get_column_letter(columns[0])
+    last_column = get_column_letter(columns[-1])
+    return f"={aggregation}({first_column}{row}:{last_column}{row})"
+
+
+def apply_comparison_formatting(ws, rows, daily_columns, weekly_columns):
+    """Compare adjacent daily/weekly values independently, leaving the first neutral."""
+    for row in rows:
+        for columns in (daily_columns, weekly_columns):
+            if not columns:
+                continue
+            for column in columns:
+                ws.cell(row, column).fill = COMPARISON_FILLS["neutral"]
+            if len(columns) < 2:
+                continue
+
+            first_current = get_column_letter(columns[1])
+            first_previous = get_column_letter(columns[0])
+            comparison_range = (
+                f"{first_current}{row}:"
+                f"{get_column_letter(columns[-1])}{row}"
+            )
+            for operator, fill_key in (
+                (">", "increase"),
+                ("<", "decrease"),
+                ("=", "neutral"),
+            ):
+                formula = (
+                    f"AND(ISNUMBER({first_current}{row}),"
+                    f"ISNUMBER({first_previous}{row}),"
+                    f"{first_current}{row}{operator}{first_previous}{row})"
+                )
+                ws.conditional_formatting.add(
+                    comparison_range,
+                    FormulaRule(
+                        formula=[formula],
+                        fill=COMPARISON_FILLS[fill_key],
+                        stopIfTrue=True,
+                    ),
+                )
 
 
 def clean_bundle_name(name: str) -> str:
@@ -141,8 +205,9 @@ def add_dashboard_sheet(
     sample_source_date: str | None = None,
 ):
     ws = wb.create_sheet("Dashboard", 0)
-    calc_ws = wb.create_sheet("calculations")
+    calc_ws = wb.create_sheet("calculations", 1)
     calc_ws.sheet_view.showGridLines = False
+    calc_ws.sheet_view.topLeftCell = "A1"
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 85
     ws.freeze_panes = "B6"
@@ -184,7 +249,7 @@ def add_dashboard_sheet(
     report_dates = list(pd.date_range(parse_date_key(start_date), parse_date_key(end_date), freq="D"))
     if not report_dates:
         report_dates = [parse_date_key(start_date)]
-    data_start_row = 46
+    data_start_row = 4
     data_end_row = data_start_row + len(report_dates) - 1
     kpi_formulas = {
         "Revenue": f"=SUM('calculations'!$C${data_start_row}:$C${data_end_row})",
@@ -219,7 +284,7 @@ def add_dashboard_sheet(
         ws["B11"] = f"SAMPLE DATA: Values are from {sample_source_date} and re-dated to the requested reporting day."
         ws["B11"].font = Font(name="Aptos", size=9, bold=True, color="9A3412")
 
-    trend_header = 45
+    trend_header = 3
     calc_headers = ["Date", "Revenue (ETB)", "Bundle Subscribers", "Purchase Quantity", "Traffic (GB)"]
     for col, value in enumerate(calc_headers, start=2):
         calc_ws.cell(trend_header, col, value)
@@ -235,12 +300,12 @@ def add_dashboard_sheet(
         calc_ws.cell(trend_header, col, value)
 
     section_titles = [
-        ("B43:F43", "DAILY PERFORMANCE"),
-        ("G43:H43", "REVENUE BY CATEGORY"),
-        ("J43:L43", "BUNDLE REVENUE RANKING"),
-        ("N43:O43", "TOP REVENUE BUNDLES"),
-        ("Q43:S43", "BUNDLE TRAFFIC RANKING"),
-        ("U43:V43", "TOP TRAFFIC BUNDLES"),
+        ("B1:F1", "DAILY PERFORMANCE"),
+        ("G1:H1", "REVENUE BY CATEGORY"),
+        ("J1:L1", "BUNDLE REVENUE RANKING"),
+        ("N1:O1", "TOP REVENUE BUNDLES"),
+        ("Q1:S1", "BUNDLE TRAFFIC RANKING"),
+        ("U1:V1", "TOP TRAFFIC BUNDLES"),
     ]
     for cell_range, title_text in section_titles:
         calc_ws.merge_cells(cell_range)
@@ -255,8 +320,8 @@ def add_dashboard_sheet(
 
     calc_ws.sheet_view.showGridLines = False
     calc_ws.sheet_view.zoomScale = 85
-    calc_ws.freeze_panes = "B46"
-    calc_ws.row_dimensions[43].height = 25
+    calc_ws.freeze_panes = "B4"
+    calc_ws.row_dimensions[1].height = 25
     calc_ws.row_dimensions[trend_header].height = 34
     for column, width in {
         "A": 3, "B": 14, "C": 18, "D": 22, "E": 20, "F": 16,
@@ -342,13 +407,20 @@ def add_dashboard_sheet(
     for first_col, last_col, _, metric_key, _ in cards:
         ws.cell(7, first_col).value = kpi_formulas[metric_key]
 
-    report_week_days = {}
-    for report_date in report_dates:
-        week_key = (report_date.isocalendar().year, report_date.isocalendar().week)
-        report_week_days[week_key] = report_week_days.get(week_key, 0) + 1
-    ordered_report_weeks = sorted(report_week_days)
+    summary_date_keys = set()
+    for source_df in (purchases, usage):
+        if not source_df.empty and "ID_DATE" in source_df.columns:
+            summary_date_keys.update(source_df["ID_DATE"].unique())
+    summary_dates = sorted({parse_date_key(key) for key in summary_date_keys})
+    if not summary_dates:
+        summary_dates = [parse_date_key(start_date)]
+    report_week_groups = group_columns_by_iso_week(summary_dates, 5)
+    report_week_days = {
+        week_key: len(columns) for week_key, columns in report_week_groups
+    }
+    ordered_report_weeks = [week_key for week_key, _ in report_week_groups]
     if len(ordered_report_weeks) >= 2:
-        summary_week_start_col = 5 + len(report_dates)
+        summary_week_start_col = 6 + len(summary_dates)
         previous_week_index = len(ordered_report_weeks) - 2
         latest_week_index = len(ordered_report_weeks) - 1
         previous_week_col = get_column_letter(summary_week_start_col + previous_week_index)
@@ -608,6 +680,7 @@ def create_excel(
             row_cursor = 4
         else:
             row_cursor = 3
+        data_row_start = row_cursor
         ws.freeze_panes = ws.cell(row_cursor, start_col).coordinate
 
         cat_start_rows = {}
@@ -785,6 +858,29 @@ def create_excel(
             ws.cell(wullo_sub_row, col).fill = SUBTOTAL_FILL
             ws.cell(wullo_sub_row, col).border = THIN_BORDER
 
+        daily_columns = list(range(start_col, start_col + len(sorted_dates)))
+        week_groups = group_columns_by_iso_week(sorted_dates, start_col)
+        weekly_start_col = daily_columns[-1] + 2
+        weekly_columns = list(range(weekly_start_col, weekly_start_col + len(week_groups)))
+        separator_col = daily_columns[-1] + 1
+        for week_index, (week_key, _) in enumerate(week_groups):
+            week_col = weekly_start_col + week_index
+            week_label = f"Wk{week_key[1]}"
+            ws.cell(day_row, week_col, "WEEKLY")
+            header_cell = ws.cell(header_date_row, week_col, week_label)
+            header_cell.alignment = Alignment(horizontal="center")
+            for row_idx in range(data_row_start, wullo_sub_row + 1):
+                aggregation = "AVERAGE" if metric_code == "A.SUBS" else "SUM"
+                cell = ws.cell(
+                    row_idx,
+                    week_col,
+                    weekly_aggregation_formula(
+                        row_idx, week_groups[week_index][1], aggregation
+                    ),
+                )
+                cell.number_format = NUM_FORMAT
+                cell.alignment = Alignment(horizontal="right")
+
         ws.column_dimensions["B"].width = 46
         ws.column_dimensions["C"].width = 16
         ws.column_dimensions["D"].width = 12
@@ -799,22 +895,38 @@ def create_excel(
             "F6C445" if metric_code == "B.QUANTITY" else
             "0D9488"
         )
-        for col_idx in range(start_col, start_col + len(sorted_dates)):
+        for col_idx in daily_columns + weekly_columns:
             ws.column_dimensions[get_column_letter(col_idx)].width = 15
 
-        bar_color = (
-            "2F80ED" if is_traffic else
-            "00A859" if metric_code == "A.SUBS" else
-            "F6C445" if metric_code == "B.QUANTITY" else
-            "0D9488"
+        for row_idx in range(header_date_row, wullo_sub_row + 1):
+            for col_idx in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+                ws.cell(row_idx, col_idx).border = THIN_BORDER
+        comparison_rows = list(range(data_row_start, wullo_sub_row + 1))
+        apply_comparison_formatting(
+            ws, comparison_rows, daily_columns, weekly_columns
         )
-        first_value_col = get_column_letter(start_col)
-        last_value_col = get_column_letter(start_col + len(sorted_dates) - 1)
-        for data_row in bundle_row_map.values():
-            ws.conditional_formatting.add(
-                f"{first_value_col}{data_row}:{last_value_col}{data_row}",
-                DataBarRule(start_type="min", end_type="max", color=bar_color, showValue=True),
-            )
+
+        header_fill = PatternFill("solid", fgColor="006341")
+        for col_idx in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+            header_cell = ws.cell(header_date_row, col_idx)
+            header_cell.fill = header_fill
+            header_cell.font = Font(bold=True, color="FFFFFF")
+            header_cell.alignment = Alignment(horizontal="center", vertical="center")
+        for col_idx in daily_columns + weekly_columns:
+            day_cell = ws.cell(day_row, col_idx)
+            day_cell.fill = header_fill
+            day_cell.font = Font(bold=True, color="FFFFFF")
+            day_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[header_date_row].height = 22
+        ws.row_dimensions[day_row].height = 20
+        ws.column_dimensions[get_column_letter(separator_col)].width = 3
+        for subtotal_row in cat_start_rows.values():
+            for col_idx in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+                cell = ws.cell(subtotal_row, col_idx)
+                cell.font = Font(bold=True)
+                cell.border = TOTAL_BORDER
+            for col_idx in daily_columns + weekly_columns:
+                ws.cell(subtotal_row, col_idx).fill = SUBTOTAL_FILL
 
         return cat_start_rows, bundle_row_map
 
@@ -1050,14 +1162,15 @@ def create_excel(
             cell.fill = SUBTOTAL_FILL
             cell.border = THIN_BORDER
 
-    summary_week_groups = {}
-    for idx, report_date in enumerate(sorted_dates):
-        week_key = (report_date.isocalendar().year, report_date.isocalendar().week)
-        summary_week_groups.setdefault(week_key, []).append(summary_start_col + idx)
-
+    summary_daily_columns = list(
+        range(summary_start_col, summary_start_col + len(sorted_dates))
+    )
+    summary_week_groups = group_columns_by_iso_week(sorted_dates, summary_start_col)
+    summary_separator_col = summary_daily_columns[-1] + 1
+    summary_week_start_col = summary_separator_col + 1
     summary_week_columns = []
-    for week_index, (week_key, daily_columns) in enumerate(sorted(summary_week_groups.items())):
-        week_col = summary_start_col + len(sorted_dates) + week_index
+    for week_index, (week_key, daily_columns) in enumerate(summary_week_groups):
+        week_col = summary_week_start_col + week_index
         summary_week_columns.append(week_col)
         week_label = f"Wk{week_key[1]}"
         ws_summary.cell(2, week_col, "WEEKLY").font = Font(bold=True, color="006341")
@@ -1104,17 +1217,64 @@ def create_excel(
             if 42 <= row_idx <= 48:
                 cell.fill = RATE_FILL
 
+    summary_last_col = summary_week_columns[-1]
+    summary_display_columns = (
+        list(range(2, summary_daily_columns[-1] + 1)) + summary_week_columns
+    )
+    summary_headers = (4, 13, 22, 31, 41)
+    summary_rows = (
+        list(range(5, 13))
+        + list(range(14, 22))
+        + list(range(23, 31))
+        + list(range(32, 40))
+        + list(range(42, 50))
+    )
+    for row_idx in summary_headers + tuple(summary_rows):
+        for col_idx in summary_display_columns:
+            ws_summary.cell(row_idx, col_idx).border = THIN_BORDER
+    for header_row in summary_headers:
+        for col_idx in summary_display_columns:
+            cell = ws_summary.cell(header_row, col_idx)
+            cell.fill = PatternFill("solid", fgColor="006341")
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    summary_header_fill = PatternFill("solid", fgColor="006341")
+    for col_idx in summary_daily_columns + summary_week_columns:
+        for row_idx in (2, 3):
+            cell = ws_summary.cell(row_idx, col_idx)
+            cell.fill = summary_header_fill
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    apply_comparison_formatting(
+        ws_summary, summary_rows, summary_daily_columns, summary_week_columns
+    )
+    for total_row, *_ in summary_total_specs:
+        for col_idx in summary_display_columns:
+            cell = ws_summary.cell(total_row, col_idx)
+            cell.font = Font(bold=True)
+            cell.border = TOTAL_BORDER
+            cell.fill = SUBTOTAL_FILL
+    for row_idx in range(42, 49):
+        for col_idx in summary_daily_columns + summary_week_columns:
+            ws_summary.cell(row_idx, col_idx).fill = RATE_FILL
+
     ws_summary.column_dimensions["B"].hidden = True
-    for col_idx in range(summary_start_col + len(sorted_dates), summary_start_col + len(sorted_dates) + len(summary_week_columns)):
+    ws_summary.column_dimensions[get_column_letter(summary_separator_col)].width = 3
+    for col_idx in summary_week_columns:
         ws_summary.column_dimensions[get_column_letter(col_idx)].width = 14
     ws_summary.freeze_panes = f"{get_column_letter(summary_start_col)}5"
 
     ws_summary.column_dimensions["B"].width = 24
     ws_summary.column_dimensions["C"].width = 24
     ws_summary.column_dimensions["D"].width = 14
-    for idx in range(len(sorted_dates)):
-        col_letter = get_column_letter(summary_start_col + idx)
+    for col_idx in summary_daily_columns:
+        col_letter = get_column_letter(col_idx)
         ws_summary.column_dimensions[col_letter].width = 15
+    for row_idx in summary_rows:
+        for col_idx in summary_daily_columns + summary_week_columns:
+            ws_summary.cell(row_idx, col_idx).alignment = Alignment(horizontal="right")
 
     # Raw datasets
     purchases_export = purchases.copy()
@@ -1164,6 +1324,9 @@ def create_excel(
     ws_tu.column_dimensions["F"].hidden = True
 
     add_dashboard_sheet(wb, purchases_export, usage_export, start_date, end_date, sample_source_date)
+    for sheet_name in ("BUNDLE PURCHASE", "TRAFFIC_DATA", "calculations"):
+        wb[sheet_name].sheet_state = "hidden"
+    wb.active = wb.sheetnames.index("Dashboard")
     wb.save(output_path)
     return output_path
 
