@@ -68,6 +68,11 @@ HEADER_FILL = PatternFill(start_color="C0E4F5", end_color="C0E4F5", fill_type="s
 SUBTOTAL_FILL = PatternFill(start_color="EAF2F8", end_color="EAF2F8", fill_type="solid")
 RATE_FILL = PatternFill(start_color="D5F5E3", end_color="D5F5E3", fill_type="solid")
 COMPARISON_FILLS = {
+    "increase": PatternFill(bgColor="FFDCFCE7"),
+    "decrease": PatternFill(bgColor="FFFEE2E2"),
+    "neutral": PatternFill(bgColor="FFFFFFFF"),
+}
+COMPARISON_CELL_FILLS = {
     "increase": PatternFill("solid", fgColor="FFDCFCE7"),
     "decrease": PatternFill("solid", fgColor="FFFEE2E2"),
     "neutral": PatternFill("solid", fgColor="FFFFFFFF"),
@@ -113,7 +118,7 @@ def apply_comparison_formatting(ws, rows, daily_columns, weekly_columns):
             if not columns:
                 continue
             for column in columns:
-                ws.cell(row, column).fill = COMPARISON_FILLS["neutral"]
+                ws.cell(row, column).fill = COMPARISON_CELL_FILLS["neutral"]
             if len(columns) < 2:
                 continue
 
