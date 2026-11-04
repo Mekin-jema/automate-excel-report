@@ -424,9 +424,31 @@ def add_dashboard_sheet(
         chart.add_data(Reference(calc_ws, min_col=data_col, min_row=trend_header, max_row=last_row), titles_from_data=True)
         chart.set_categories(Reference(calc_ws, min_col=category_col, min_row=first_row, max_row=last_row))
         chart.title = title_text
+        chart.title.overlay = False
+        chart.title.tx.rich.p[0].pPr = ParagraphProperties(
+            defRPr=CharacterProperties(sz=1300, b=True)
+        )
         if not doughnut:
             chart.x_axis.title = x_axis_title
             chart.y_axis.title = y_axis_title
+            chart.x_axis.title.overlay = False
+            chart.y_axis.title.overlay = False
+            axis_font_size = 850 if isinstance(chart, BarChart) and chart.type == "bar" else 900
+            axis_text = RichText(
+                bodyPr=RichTextProperties(),
+                p=[
+                    DrawingParagraph(
+                        pPr=ParagraphProperties(defRPr=CharacterProperties(sz=axis_font_size)),
+                        endParaRPr=CharacterProperties(sz=axis_font_size),
+                    )
+                ],
+            )
+            chart.x_axis.txPr = axis_text
+            chart.y_axis.txPr = axis_text
+            for axis_title in (chart.x_axis.title, chart.y_axis.title):
+                axis_title.tx.rich.p[0].pPr = ParagraphProperties(
+                    defRPr=CharacterProperties(sz=900, b=True)
+                )
             chart.x_axis.delete = False
             chart.y_axis.delete = False
             chart.x_axis.majorTickMark = "out"
@@ -441,8 +463,8 @@ def add_dashboard_sheet(
                 chart.x_axis.numFmt = NumFmt(formatCode=value_format, sourceLinked=False)
                 chart.y_axis.tickLblPos = "low"
         chart.style = 10
-        chart.height = 7.4
-        chart.width = 13.5
+        chart.height = 8.2
+        chart.width = 14.5
         if doughnut:
             chart.holeSize = 58
             chart.varyColors = True
