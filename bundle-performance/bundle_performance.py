@@ -192,7 +192,7 @@ print("\n" + "-" * 50)
 print("STEP 3: Archiving Old Reports")
 print("-" * 50)
 
-reports_folder = BASE_DIR / "reports"
+reports_folder = BASE_DIR / "reports" / "data"
 archives_folder = reports_folder / "Archives"
 archives_folder.mkdir(parents=True, exist_ok=True)
 

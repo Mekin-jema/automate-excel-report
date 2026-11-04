@@ -31,7 +31,7 @@ from services.shared.excel_formatting import (
     parse_date_key,
 )
 
-REPORT_DIR = Path(__file__).resolve().parents[2] / "reports"
+REPORT_DIR = Path(__file__).resolve().parents[2] / "reports" / "voice"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 VOICE_BUNDLES = [

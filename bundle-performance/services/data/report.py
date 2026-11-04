@@ -44,7 +44,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-REPORT_DIR = BASE_DIR / "reports"
+REPORT_DIR = BASE_DIR / "reports" / "data"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 18 Target Bundles specification matching Excel template

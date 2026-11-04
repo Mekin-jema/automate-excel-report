@@ -2,6 +2,8 @@
 
 Automated daily reporting pipeline and interactive Excel dashboard for Safaricom Ethiopia Bundle Performance, adapted directly from the sample implementation pattern (`sample/sales_performance.py` and `sample/sales_performance.xlsx`).
 
+> **New to this project?** Start with the [step-by-step project guide](docs/PROJECT_GUIDE.md) for setup, architecture, Data and Voice workflows, troubleshooting, and a learning roadmap.
+
 ---
 
 ## 🎯 Project Overview & Procedure
@@ -32,7 +34,7 @@ This project automates the end-to-end data processing, quality assurance, multi-
    - Runs `sql/bundle_usage.sql` (`ID_DATE`, `BUNDLE_NAME`, `METRIC` [`USAGE`], `VALUE`).
 
 3. **Step 3: Report Archiving**
-   - Automatically archives previous report workbooks into `reports/Archives/` prior to generating new runs.
+   - Automatically archives previous Data report workbooks into `reports/data/Archives/` prior to generating new runs.
 
 4. **Step 4: Clean Date-Range Excel Dashboard**
    - Builds a fresh workbook for the requested period; it does not carry forward old template values or pivot caches.
