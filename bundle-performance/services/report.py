@@ -792,8 +792,8 @@ def create_excel(
 
     # Section 1: SUBS
     ws_summary.cell(4, 2, "BUNDLE_NAME").font = Font(bold=True)
-    ws_summary.cell(4, 3, "Subs ").font = Font(bold=True)
-    ws_summary.cell(4, 4, "METRIC").font = Font(bold=True)
+    ws_summary.cell(4, 3, "SUBSCRIBERS").font = Font(bold=True)
+    ws_summary.cell(4, 4, "ROW TYPE").font = Font(bold=True)
     for col_idx in range(2, summary_start_col):
         ws_summary.cell(4, col_idx).fill = HEADER_FILL
         ws_summary.cell(4, col_idx).border = THIN_BORDER
@@ -829,8 +829,8 @@ def create_excel(
 
     # Section 2: QUANTITY
     ws_summary.cell(13, 2, "BUNDLE_NAME").font = Font(bold=True)
-    ws_summary.cell(13, 3, "QUANTITY").font = Font(bold=True)
-    ws_summary.cell(13, 4, "METRIC").font = Font(bold=True)
+    ws_summary.cell(13, 3, "PURCHASE QUANTITY").font = Font(bold=True)
+    ws_summary.cell(13, 4, "ROW TYPE").font = Font(bold=True)
     for col_idx in range(2, summary_start_col):
         ws_summary.cell(13, col_idx).fill = HEADER_FILL
         ws_summary.cell(13, col_idx).border = THIN_BORDER
@@ -866,8 +866,8 @@ def create_excel(
 
     # Section 3: REVENUE
     ws_summary.cell(22, 2, "BUNDLE_NAME").font = Font(bold=True)
-    ws_summary.cell(22, 3, "REVENUE").font = Font(bold=True)
-    ws_summary.cell(22, 4, "METRIC").font = Font(bold=True)
+    ws_summary.cell(22, 3, "REVENUE (ETB)").font = Font(bold=True)
+    ws_summary.cell(22, 4, "ROW TYPE").font = Font(bold=True)
     for col_idx in range(2, summary_start_col):
         ws_summary.cell(22, col_idx).fill = HEADER_FILL
         ws_summary.cell(22, col_idx).border = THIN_BORDER
@@ -902,8 +902,8 @@ def create_excel(
             cell.border = THIN_BORDER
 
     # Section 4: TRAFFIC
-    ws_summary.cell(31, 3, "TRAFFIC").font = Font(bold=True)
-    ws_summary.cell(31, 4, "METRIC").font = Font(bold=True)
+    ws_summary.cell(31, 3, "TRAFFIC (MB)").font = Font(bold=True)
+    ws_summary.cell(31, 4, "ROW TYPE").font = Font(bold=True)
     for col_idx in range(2, summary_start_col):
         ws_summary.cell(31, col_idx).fill = HEADER_FILL
         ws_summary.cell(31, col_idx).border = THIN_BORDER
@@ -938,8 +938,8 @@ def create_excel(
             cell.border = THIN_BORDER
 
     # Section 5: RATE
-    ws_summary.cell(41, 3, "RATE").font = Font(bold=True)
-    ws_summary.cell(41, 4, "METRIC").font = Font(bold=True)
+    ws_summary.cell(41, 3, "REVENUE RATE (ETB/GB)").font = Font(bold=True)
+    ws_summary.cell(41, 4, "ROW TYPE").font = Font(bold=True)
     for col_idx in range(2, summary_start_col):
         ws_summary.cell(41, col_idx).fill = HEADER_FILL
         ws_summary.cell(41, col_idx).border = THIN_BORDER
@@ -972,6 +972,30 @@ def create_excel(
             cell = ws_summary.cell(r_num, col, f'=IFERROR({col_letter}{rev_r}/{col_letter}{traf_r}*1024, "")')
             cell.number_format = RATE_FORMAT
             cell.fill = RATE_FILL
+            cell.border = THIN_BORDER
+
+    summary_total_specs = [
+        (12, "TOTAL SUBSCRIBERS", 5, 11, "sum"),
+        (21, "TOTAL PURCHASE QUANTITY", 14, 20, "sum"),
+        (30, "TOTAL REVENUE (ETB)", 23, 29, "sum"),
+        (39, "TOTAL TRAFFIC (MB)", 32, 38, "sum"),
+        (49, "OVERALL REVENUE RATE (ETB/GB)", 30, 39, "rate"),
+    ]
+    for total_row, label, first_source_row, last_source_row, total_type in summary_total_specs:
+        ws_summary.cell(total_row, 3, label).font = Font(bold=True)
+        for idx in range(len(sorted_dates)):
+            col = summary_start_col + idx
+            col_letter = get_column_letter(col)
+            if total_type == "rate":
+                formula = f'=IFERROR({col_letter}{first_source_row}/{col_letter}{last_source_row}*1024,"")'
+                number_format = RATE_FORMAT
+            else:
+                formula = f"=SUM({col_letter}{first_source_row}:{col_letter}{last_source_row})"
+                number_format = NUM_FORMAT
+            cell = ws_summary.cell(total_row, col, formula)
+            cell.font = Font(bold=True)
+            cell.number_format = number_format
+            cell.fill = SUBTOTAL_FILL
             cell.border = THIN_BORDER
 
     summary_week_groups = {}
@@ -1007,6 +1031,19 @@ def create_excel(
             traffic_row = row_idx - 10
             week_letter = get_column_letter(week_col)
             ws_summary.cell(row_idx, week_col, f'=IFERROR({week_letter}{revenue_row}/{week_letter}{traffic_row}*1024,"")')
+
+        for total_row, label, first_source_row, last_source_row, total_type in summary_total_specs:
+            if total_type == "rate":
+                formula = f'=IFERROR({week_letter}{first_source_row}/{week_letter}{last_source_row}*1024,"")'
+                number_format = RATE_FORMAT
+            else:
+                formula = f"=SUM({week_letter}{first_source_row}:{week_letter}{last_source_row})"
+                number_format = NUM_FORMAT
+            cell = ws_summary.cell(total_row, week_col, formula)
+            cell.font = Font(bold=True)
+            cell.number_format = number_format
+            cell.fill = SUBTOTAL_FILL
+            cell.border = THIN_BORDER
 
         for row_idx in list(range(5, 12)) + list(range(14, 21)) + list(range(23, 30)) + list(range(32, 39)) + list(range(42, 49)):
             cell = ws_summary.cell(row_idx, week_col)
@@ -1286,4 +1323,10 @@ def create_pdf(
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("ALIGN", (1, 1), (-1, -1), "RIG
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+            ])
+        )
+        content.append(cat_table)
+
+    document.build(content)
+    return output
