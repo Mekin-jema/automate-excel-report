@@ -23,7 +23,7 @@ from openpyxl.chart.marker import Marker
 from openpyxl.chart.text import RichText
 from openpyxl.chart.data_source import NumFmt
 from openpyxl.drawing.text import CharacterProperties, Paragraph as DrawingParagraph, ParagraphProperties, RichTextProperties
-from openpyxl.formatting.rule import CellIsRule
+from openpyxl.formatting.rule import CellIsRule, DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -791,8 +791,30 @@ def create_excel(
         ws.column_dimensions["E"].width = 12
         if is_traffic:
             ws.column_dimensions["F"].width = 12
+        ws.column_dimensions["B"].hidden = True
+        ws.sheet_view.showGridLines = False
+        ws.sheet_properties.tabColor = (
+            "2F80ED" if is_traffic else
+            "00A859" if metric_code == "A.SUBS" else
+            "F6C445" if metric_code == "B.QUANTITY" else
+            "0D9488"
+        )
         for col_idx in range(start_col, start_col + len(sorted_dates)):
             ws.column_dimensions[get_column_letter(col_idx)].width = 15
+
+        bar_color = (
+            "2F80ED" if is_traffic else
+            "00A859" if metric_code == "A.SUBS" else
+            "F6C445" if metric_code == "B.QUANTITY" else
+            "0D9488"
+        )
+        first_value_col = get_column_letter(start_col)
+        last_value_col = get_column_letter(start_col + len(sorted_dates) - 1)
+        for data_row in bundle_row_map.values():
+            ws.conditional_formatting.add(
+                f"{first_value_col}{data_row}:{last_value_col}{data_row}",
+                DataBarRule(start_type="min", end_type="max", color=bar_color, showValue=True),
+            )
 
         return cat_start_rows, bundle_row_map
 
@@ -831,9 +853,9 @@ def create_excel(
 
     subs_rows_meta = [
         (5, None, "Gize +", "SUBS", f"SUBS!{{col}}{subs_cat_rows['Gize +']}"),
-        (6, None, "Wullo Package", None, f"SUBS!{{col}}{subs_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
+        (6, None, "Wullo Package", "SUBS", f"SUBS!{{col}}{subs_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
         (7, "Wullo  Packages", "Mata Package", "SUBS", f"SUBS!{{col}}{subs_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
-        (8, None, "Montlhly  Wullo", None, f"SUBS!{{col}}{subs_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
+        (8, None, "Montlhly  Wullo", "SUBS", f"SUBS!{{col}}{subs_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
         (9, "Daily Unlimited", "Daily Unlimited", "SUBS", f"SUBS!{{col}}{subs_cat_rows['Daily Unlimited']}"),
         (10, "Weekly Unlimited", "Weekly Unlimited", "SUBS", f"SUBS!{{col}}{subs_cat_rows['Weekly Unlimited']}"),
         (11, "Monthly Unlimited", "Monthly Unlimited", "SUBS", f"SUBS!{{col}}{subs_cat_rows['Monthly Unlimited']}"),
@@ -868,9 +890,9 @@ def create_excel(
 
     quty_rows_meta = [
         (14, None, "Gize +", "QUANTITY", f"QUTY!{{col}}{quty_cat_rows['Gize +']}"),
-        (15, None, "Wullo Package ", None, f"QUTY!{{col}}{quty_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
+        (15, None, "Wullo Package ", "QUANTITY", f"QUTY!{{col}}{quty_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
         (16, "Wullo  Packages", "Mata Package ", "QUANTITY", f"QUTY!{{col}}{quty_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
-        (17, None, "Montlhly  Wullo", None, f"QUTY!{{col}}{quty_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
+        (17, None, "Montlhly  Wullo", "QUANTITY", f"QUTY!{{col}}{quty_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
         (18, "Daily Unlimited", "Daily Unlimited", "QUANTITY", f"QUTY!{{col}}{quty_cat_rows['Daily Unlimited']}"),
         (19, "Weekly Unlimited", "Weekly Unlimited", "QUANTITY", f"QUTY!{{col}}{quty_cat_rows['Weekly Unlimited']}"),
         (20, "Monthly Unlimited", "Monthly Unlimited", "QUANTITY", f"QUTY!{{col}}{quty_cat_rows['Monthly Unlimited']}"),
@@ -905,9 +927,9 @@ def create_excel(
 
     rev_rows_meta = [
         (23, None, "Gize +", "REVENUE", f"REVENUE!{{col}}{rev_cat_rows['Gize +']}"),
-        (24, None, "Wullo Package ", None, f"REVENUE!{{col}}{rev_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
+        (24, None, "Wullo Package ", "REVENUE", f"REVENUE!{{col}}{rev_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
         (25, "Wullo  Packages", "Mata Package ", "REVENUE", f"REVENUE!{{col}}{rev_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
-        (26, None, "Montlhly  Wullo", None, f"REVENUE!{{col}}{rev_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
+        (26, None, "Montlhly  Wullo", "REVENUE", f"REVENUE!{{col}}{rev_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
         (27, "Daily Unlimited", "Daily Unlimited", "REVENUE", f"REVENUE!{{col}}{rev_cat_rows['Daily Unlimited']}"),
         (28, "Weekly Unlimited", "Weekly Unlimited", "REVENUE", f"REVENUE!{{col}}{rev_cat_rows['Weekly Unlimited']}"),
         (29, "Monthly Unlimited", "Monthly Unlimited", "REVENUE", f"REVENUE!{{col}}{rev_cat_rows['Monthly Unlimited']}"),
@@ -941,9 +963,9 @@ def create_excel(
 
     traf_rows_meta = [
         (32, None, "Gize +", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Gize +']}"),
-        (33, None, "Wullo Package ", None, f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
+        (33, None, "Wullo Package ", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_WULLO_UNLTD_D_5GB_OFFPEAK_FUP']}"),
         (34, None, "Mata Package ", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_bundle_rows['NIGHT_UNLTD_D_5GB_FUP']}"),
-        (35, None, "Montlhly  Wullo", None, f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
+        (35, None, "Montlhly  Wullo", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_bundle_rows['EBU_DATA_WULLO_75GB_MONTHLY']}"),
         (36, None, "Daily Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Daily Unlimited']}"),
         (37, None, "Weekly Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Weekly Unlimited']}"),
         (38, None, "Monthly Unlimited", "TRAFFIC (MB)", f"TRAFFIC!{{col}}{traf_cat_rows['Monthly Unlimited']}"),
@@ -977,9 +999,9 @@ def create_excel(
 
     rate_rows_meta = [
         (42, None, "Gize +", "ETB/GB", 23, 32),
-        (43, None, "Wullo Package ", None, 24, 33),
+        (43, None, "Wullo Package ", "ETB/GB", 24, 33),
         (44, None, "Mata Package ", "ETB/GB", 25, 34),
-        (45, None, "Montlhly  Wullo", None, 26, 35),
+        (45, None, "Montlhly  Wullo", "ETB/GB", 26, 35),
         (46, None, "Daily Unlimited", "ETB/GB", 27, 36),
         (47, None, "Weekly Unlimited", "ETB/GB", 28, 37),
         (48, None, "Monthly Unlimited", "ETB/GB", 29, 38),
@@ -1005,6 +1027,14 @@ def create_excel(
     ]
     for total_row, label, first_source_row, last_source_row, total_type in summary_total_specs:
         ws_summary.cell(total_row, 3, label).font = Font(bold=True)
+        row_type = {
+            12: "SUBS",
+            21: "QUANTITY",
+            30: "REVENUE",
+            39: "TRAFFIC (MB)",
+            49: "ETB/GB",
+        }[total_row]
+        ws_summary.cell(total_row, 4, row_type).font = Font(bold=True)
         for idx in range(len(sorted_dates)):
             col = summary_start_col + idx
             col_letter = get_column_letter(col)
