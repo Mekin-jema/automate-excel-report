@@ -6,10 +6,17 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
-from openpyxl.chart.axis import TextAxis
+from openpyxl.chart.data_source import NumFmt
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 from openpyxl.chart.marker import Marker
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import (
+    CharacterProperties,
+    Paragraph as DrawingParagraph,
+    ParagraphProperties,
+    RichTextProperties,
+)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -113,6 +120,8 @@ def _write_raw_sheet(ws, frame, columns):
         cell.fill = _HEADER_FILL
         cell.font = Font(bold=True, color="FFFFFF")
         cell.border = THIN_BORDER
+        if column in {"BUNDLE_NAME", "CATEGORY"}:
+            ws.column_dimensions[get_column_letter(col_index)].hidden = True
 
     for row_index, row in enumerate(frame[columns].itertuples(index=False, name=None), start=2):
         for col_index, value in enumerate(row, start=1):
@@ -325,6 +334,8 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         "S": 12, "T": 3, "U": 38, "V": 18,
     }.items():
         calculations.column_dimensions[column].width = width
+    for column in ("J", "N", "Q", "U"):
+        calculations.column_dimensions[column].hidden = True
 
     def add_chart(chart, data_col, category_col, title_text, anchor, color,
                   first_row, last_row, doughnut=False, x_axis_title=None,
@@ -338,6 +349,9 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
         )
         chart.title = title_text
         chart.title.overlay = False
+        chart.title.tx.rich.p[0].pPr = ParagraphProperties(
+            defRPr=CharacterProperties(sz=1300, b=True)
+        )
         chart.style = 10
         chart.height = 8.2
         chart.width = 14.5
@@ -349,10 +363,50 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
             chart.legend.position = "r"
             chart.dataLabels = DataLabelList()
             chart.dataLabels.showPercent = True
+            chart.dataLabels.showVal = False
+            chart.dataLabels.showCatName = False
+            chart.dataLabels.showSerName = False
             chart.dataLabels.showLeaderLines = True
+            chart.dataLabels.txPr = RichText(
+                bodyPr=RichTextProperties(),
+                p=[
+                    DrawingParagraph(
+                        pPr=ParagraphProperties(
+                            defRPr=CharacterProperties(
+                                solidFill="FFFFFF", sz=900
+                            )
+                        ),
+                        endParaRPr=CharacterProperties(
+                            solidFill="FFFFFF", sz=900
+                        ),
+                    )
+                ],
+            )
         else:
             chart.x_axis.title = x_axis_title
             chart.y_axis.title = y_axis_title
+            chart.x_axis.title.overlay = False
+            chart.y_axis.title.overlay = False
+            axis_font_size = (
+                850 if isinstance(chart, BarChart) and chart.type == "bar" else 900
+            )
+            axis_text = RichText(
+                bodyPr=RichTextProperties(),
+                p=[
+                    DrawingParagraph(
+                        pPr=ParagraphProperties(
+                            defRPr=CharacterProperties(sz=axis_font_size)
+                        ),
+                        endParaRPr=CharacterProperties(sz=axis_font_size),
+                    )
+                ],
+            )
+            chart.x_axis.txPr = axis_text
+            chart.y_axis.txPr = axis_text
+            for axis_title in (chart.x_axis.title, chart.y_axis.title):
+                axis_title.tx.rich.p[0].pPr = ParagraphProperties(
+                    defRPr=CharacterProperties(sz=900, b=True)
+                )
             chart.x_axis.delete = False
             chart.y_axis.delete = False
             chart.x_axis.majorTickMark = "out"
@@ -360,21 +414,47 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
             if isinstance(chart, LineChart) or (
                 isinstance(chart, BarChart) and chart.type == "col"
             ):
-                chart.x_axis = TextAxis()
-                chart.x_axis.title = x_axis_title
-                chart.y_axis.title = y_axis_title
                 chart.x_axis.tickLblPos = "low"
+                chart.x_axis.numFmt = NumFmt(
+                    formatCode="d-mmm", sourceLinked=False
+                )
                 chart.x_axis.tickLblSkip = max(1, (len(dates) + 11) // 12)
                 chart.x_axis.tickMarkSkip = max(1, (len(dates) + 11) // 12)
-                chart.y_axis.numFmt = value_format
+                chart.y_axis.tickLblPos = "nextTo"
+                chart.y_axis.numFmt = NumFmt(
+                    formatCode=value_format, sourceLinked=False
+                )
+            elif isinstance(chart, BarChart) and chart.type == "bar":
+                chart.x_axis.tickLblPos = "nextTo"
+                chart.y_axis.tickLblPos = "low"
+                chart.x_axis.numFmt = NumFmt(
+                    formatCode=value_format, sourceLinked=False
+                )
             else:
-                chart.x_axis.numFmt = value_format
+                chart.x_axis.numFmt = NumFmt(
+                    formatCode=value_format, sourceLinked=False
+                )
             chart.legend = None
             if chart.series:
                 chart.series[0].graphicalProperties.solidFill = color
                 chart.series[0].graphicalProperties.line.solidFill = color
                 if isinstance(chart, LineChart):
-                    chart.series[0].marker = Marker(symbol="circle", size=7)
+                    chart.series[0].marker = Marker(symbol="circle", size=8)
+                    chart.series[0].graphicalProperties.line.width = 26000
+                    if len(dates) == 1:
+                        chart.dataLabels = DataLabelList()
+                        chart.dataLabels.showVal = True
+                        chart.dataLabels.showCatName = False
+                        chart.dataLabels.showSerName = False
+            if (
+                isinstance(chart, BarChart)
+                and chart.type == "col"
+                and len(dates) == 1
+            ):
+                chart.dataLabels = DataLabelList()
+                chart.dataLabels.showVal = True
+                chart.dataLabels.showCatName = False
+                chart.dataLabels.showSerName = False
         ws.add_chart(chart, anchor)
 
     day_end_row = 3 + len(dates)
@@ -402,7 +482,6 @@ def _create_dashboard(wb, dates, daily_columns, metric_rows):
 
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 85
-    ws.freeze_panes = "B15"
     ws.sheet_properties.tabColor = "006341"
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -445,11 +524,21 @@ def create_voice_excel(
             frame["VALUE"] = pd.to_numeric(frame["VALUE"], errors="coerce")
 
     dates = list(pd.date_range(start, end, freq="D").to_pydatetime())
-    weekly_groups = group_columns_by_iso_week(dates, 6)
-    daily_columns = list(range(6, 6 + len(dates)))
+    weekly_groups = group_columns_by_iso_week(dates, 7)
+    daily_columns = list(range(7, 7 + len(dates)))
     separator_column = daily_columns[-1] + 1
     weekly_start_column = separator_column + 1
     weekly_columns = list(range(weekly_start_column, weekly_start_column + len(weekly_groups)))
+    summary_weekly_groups = group_columns_by_iso_week(dates, 5)
+    summary_daily_columns = list(range(5, 5 + len(dates)))
+    summary_separator_column = summary_daily_columns[-1] + 1
+    summary_weekly_start_column = summary_separator_column + 1
+    summary_weekly_columns = list(
+        range(
+            summary_weekly_start_column,
+            summary_weekly_start_column + len(summary_weekly_groups),
+        )
+    )
 
     output_path = REPORT_DIR / f"Voice_Performance_{start_date}_{end_date}.xlsx"
     wb = openpyxl.Workbook()
@@ -643,6 +732,8 @@ def create_voice_excel(
         ws.column_dimensions["A"].width = 3
         ws.column_dimensions["B"].width = 42
         ws.column_dimensions["C"].width = 22
+        ws.column_dimensions["B"].hidden = True
+        ws.column_dimensions["C"].hidden = True
         ws.column_dimensions["D"].width = 14
         ws.column_dimensions["E"].width = 16
         for col in daily_columns + weekly_columns:
@@ -669,7 +760,7 @@ def create_voice_excel(
         start_row=1,
         start_column=2,
         end_row=1,
-        end_column=weekly_columns[-1],
+        end_column=summary_weekly_columns[-1],
     )
     summary.cell(
         2, 2,
@@ -679,7 +770,7 @@ def create_voice_excel(
 
     summary_header_row = 4
     for col_index, label in enumerate(
-        ("METRIC", "BUNDLE / CATEGORY", "ROW TYPE", "UNIT"), start=2
+        ("BUNDLE / CATEGORY", "ROW TYPE", "UNIT"), start=2
     ):
         cell = summary.cell(summary_header_row, col_index, label)
         cell.fill = _HEADER_FILL
@@ -687,7 +778,7 @@ def create_voice_excel(
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = THIN_BORDER
     for idx, report_date in enumerate(dates):
-        col = daily_columns[idx]
+        col = summary_daily_columns[idx]
         summary.cell(3, col, report_date.strftime("%a")).fill = _HEADER_FILL
         summary.cell(3, col).font = Font(bold=True, color="FFFFFF")
         summary.cell(3, col).alignment = Alignment(horizontal="center")
@@ -698,8 +789,8 @@ def create_voice_excel(
         date_cell.alignment = Alignment(horizontal="center")
         date_cell.border = THIN_BORDER
 
-    for week_index, (week_key, _) in enumerate(weekly_groups):
-        col = weekly_columns[week_index]
+    for week_index, (week_key, _) in enumerate(summary_weekly_groups):
+        col = summary_weekly_columns[week_index]
         week_label = f"Wk{week_key[1]}"
         summary.cell(2, col, "WEEKLY").fill = _HEADER_FILL
         summary.cell(2, col).font = Font(bold=True, color="FFFFFF")
@@ -724,8 +815,8 @@ def create_voice_excel(
     )
     for metric_code, section_label in summary_sections:
         section_row = row
-        summary.cell(section_row, 2, section_label)
-        for col in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+        summary.cell(section_row, 3, section_label)
+        for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
             cell = summary.cell(section_row, col)
             cell.fill = _SECTION_FILL
             cell.font = Font(bold=True, color="006341")
@@ -737,12 +828,11 @@ def create_voice_excel(
             bundle_name = bundle["name"]
             bundle_row = row
             section_bundles[bundle_name] = bundle_row
-            summary.cell(bundle_row, 2, section_label)
-            summary.cell(bundle_row, 3, bundle["display_name"])
-            summary.cell(bundle_row, 4, "Bundle")
-            summary.cell(bundle_row, 5, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
-            for col in daily_columns:
-                metric_date_col = get_column_letter(col)
+            summary.cell(bundle_row, 2, bundle["display_name"])
+            summary.cell(bundle_row, 3, "Bundle")
+            summary.cell(bundle_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
+            for metric_col, summary_col in zip(daily_columns, summary_daily_columns):
+                metric_date_col = get_column_letter(metric_col)
                 if metric_code == "MIN/SUB":
                     voice_row = row_maps["USAGE"]["bundles"][bundle_name]
                     subs_row = row_maps["A.SUBS"]["bundles"][bundle_name]
@@ -754,7 +844,7 @@ def create_voice_excel(
                     sheet_name = METRIC_SHEETS[metric_code]
                     metric_row = row_maps[metric_code]["bundles"][bundle_name]
                     formula = f"='{sheet_name}'!{metric_date_col}{metric_row}"
-                cell = summary.cell(bundle_row, col, formula)
+                cell = summary.cell(bundle_row, summary_col, formula)
                 cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
                 cell.alignment = Alignment(horizontal="right")
                 cell.border = THIN_BORDER
@@ -766,14 +856,15 @@ def create_voice_excel(
             ]
             subtotal_row = row
             section_categories[category] = subtotal_row
-            summary.cell(subtotal_row, 3, category)
-            summary.cell(subtotal_row, 4, "Subtotal")
-            summary.cell(subtotal_row, 5, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
+            summary.cell(subtotal_row, 2, category)
+            summary.cell(subtotal_row, 3, "Subtotal")
+            summary.cell(subtotal_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
             category_first_row = section_bundles[category_bundles[0]["name"]]
             category_last_row = section_bundles[category_bundles[-1]["name"]]
-            for col in daily_columns:
-                letter = get_column_letter(col)
+            for metric_col, summary_col in zip(daily_columns, summary_daily_columns):
+                letter = get_column_letter(summary_col)
                 if metric_code == "MIN/SUB":
+                    metric_letter = get_column_letter(metric_col)
                     voice_rows = [
                         row_maps["USAGE"]["bundles"][item["name"]]
                         for item in category_bundles
@@ -783,30 +874,30 @@ def create_voice_excel(
                         for item in category_bundles
                     ]
                     voice_sum = "+".join(
-                        f"'VOICE MINUTES'!{letter}{source_row}"
+                        f"'VOICE MINUTES'!{metric_letter}{source_row}"
                         for source_row in voice_rows
                     )
                     subs_sum = "+".join(
-                        f"'SUBS'!{letter}{source_row}"
+                        f"'SUBS'!{metric_letter}{source_row}"
                         for source_row in subs_rows_for_category
                     )
                     formula = f"=IFERROR(({voice_sum})/({subs_sum}),\"\")"
                 else:
                     formula = f"=SUM({letter}{category_first_row}:{letter}{category_last_row})"
-                summary.cell(subtotal_row, col, formula)
-                summary.cell(subtotal_row, col).number_format = (
+                summary.cell(subtotal_row, summary_col, formula)
+                summary.cell(subtotal_row, summary_col).number_format = (
                     RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
                 )
             row += 1
 
         total_row = row
-        summary.cell(total_row, 3, f"TOTAL {section_label}")
-        summary.cell(total_row, 4, "Total")
-        summary.cell(total_row, 5, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
+        summary.cell(total_row, 2, f"TOTAL {section_label}")
+        summary.cell(total_row, 3, "Total")
+        summary.cell(total_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
         if metric_code == "MIN/SUB":
             voice_total_row = summary_metric_rows["USAGE"]["total"]
             subs_total_row = summary_metric_rows["A.SUBS"]["total"]
-            for col in daily_columns:
+            for col in summary_daily_columns:
                 letter = get_column_letter(col)
                 summary.cell(
                     total_row, col,
@@ -814,7 +905,7 @@ def create_voice_excel(
                 )
                 summary.cell(total_row, col).number_format = RATE_FORMAT
         else:
-            for col in daily_columns:
+            for col in summary_daily_columns:
                 letter = get_column_letter(col)
                 subtotal_refs = ",".join(
                     f"{letter}{subtotal}" for subtotal in section_categories.values()
@@ -838,8 +929,8 @@ def create_voice_excel(
     for metric_code, section in summary_metric_rows.items():
         for bundle in VOICE_BUNDLES:
             target_row = section["bundles"][bundle["name"]]
-            for week_index, (_, source_columns) in enumerate(weekly_groups):
-                target_col = weekly_columns[week_index]
+            for week_index, (_, source_columns) in enumerate(summary_weekly_groups):
+                target_col = summary_weekly_columns[week_index]
                 if metric_code == "MIN/SUB":
                     source_daily_cells = ",".join(
                         f"{get_column_letter(source_col)}{target_row}"
@@ -864,8 +955,8 @@ def create_voice_excel(
             category_bundles = [
                 bundle for bundle in VOICE_BUNDLES if bundle["category"] == category
             ]
-            for week_index, _ in enumerate(weekly_groups):
-                col = weekly_columns[week_index]
+            for week_index, _ in enumerate(summary_weekly_groups):
+                col = summary_weekly_columns[week_index]
                 letter = get_column_letter(col)
                 bundle_week_cells = ",".join(
                     f"{letter}{section['bundles'][bundle['name']]}"
@@ -874,7 +965,7 @@ def create_voice_excel(
                 if metric_code == "MIN/SUB":
                     daily_values = ",".join(
                         f"{get_column_letter(source_col)}{target_row}"
-                        for source_col in daily_columns
+                        for source_col in summary_daily_columns
                     )
                     formula = f'=IFERROR(AVERAGE({daily_values}),"")'
                 else:
@@ -884,13 +975,13 @@ def create_voice_excel(
                     RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
                 )
 
-        for week_index, _ in enumerate(weekly_groups):
-            col = weekly_columns[week_index]
+        for week_index, _ in enumerate(summary_weekly_groups):
+            col = summary_weekly_columns[week_index]
             letter = get_column_letter(col)
             if metric_code == "MIN/SUB":
                 daily_values = ",".join(
                     f"{get_column_letter(source_col)}{section['total']}"
-                    for source_col in daily_columns
+                    for source_col in summary_daily_columns
                 )
                 formula = f'=IFERROR(AVERAGE({daily_values}),"")'
             else:
@@ -903,45 +994,46 @@ def create_voice_excel(
                 RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
             )
 
-    apply_comparison_formatting(summary, summary_rows, daily_columns, weekly_columns)
+    apply_comparison_formatting(
+        summary, summary_rows, summary_daily_columns, summary_weekly_columns
+    )
     for metric_code, section in summary_metric_rows.items():
         for subtotal_row in section["categories"].values():
-            for col in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+            for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
                 cell = summary.cell(subtotal_row, col)
                 cell.font = Font(bold=True)
                 cell.border = TOTAL_BORDER
-                if col in daily_columns + weekly_columns:
+                if col in summary_daily_columns + summary_weekly_columns:
                     cell.fill = SUBTOTAL_FILL
-        for col in list(range(2, daily_columns[-1] + 1)) + weekly_columns:
+        for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
             cell = summary.cell(section["total"], col)
             cell.font = Font(bold=True)
             cell.border = _MEDIUM_BORDER
-            if col in daily_columns + weekly_columns:
+            if col in summary_daily_columns + summary_weekly_columns:
                 cell.fill = SUBTOTAL_FILL
 
     for row_index in range(1, row):
-        summary.cell(row_index, separator_column).fill = PatternFill()
+        summary.cell(row_index, summary_separator_column).fill = PatternFill()
     summary.column_dimensions["A"].width = 3
     summary.column_dimensions["B"].width = 24
-    summary.column_dimensions["C"].width = 46
-    summary.column_dimensions["D"].width = 14
-    summary.column_dimensions["E"].width = 22
-    for col in daily_columns + weekly_columns:
+    summary.column_dimensions["B"].hidden = True
+    summary.column_dimensions["C"].width = 14
+    summary.column_dimensions["D"].width = 22
+    for col in summary_daily_columns + summary_weekly_columns:
         summary.column_dimensions[get_column_letter(col)].width = 15
-    summary.column_dimensions[get_column_letter(separator_column)].width = 3
+    summary.column_dimensions[get_column_letter(summary_separator_column)].width = 3
     for metric_section in summary_metric_rows.values():
         for bundle_row in metric_section["bundles"].values():
-            summary.cell(bundle_row, 3).alignment = Alignment(
+            summary.cell(bundle_row, 2).alignment = Alignment(
                 vertical="center", wrap_text=True
             )
-            summary.row_dimensions[bundle_row].height = 30
-    summary.freeze_panes = f"{get_column_letter(daily_columns[0])}{summary_header_row + 1}"
+    summary.freeze_panes = f"{get_column_letter(summary_daily_columns[0])}{summary_header_row + 1}"
     summary.sheet_view.showGridLines = False
     summary.sheet_properties.tabColor = "006341"
 
     for sheet_name in ("VOICE PURCHASE DATA", "VOICE USAGE DATA", "5 BIRR DATA"):
         wb[sheet_name].sheet_state = "hidden"
-    _create_dashboard(wb, dates, daily_columns, summary_metric_rows)
+    _create_dashboard(wb, dates, summary_daily_columns, summary_metric_rows)
     wb.active = wb.sheetnames.index("Dashboard")
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True
