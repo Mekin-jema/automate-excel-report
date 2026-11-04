@@ -6,7 +6,11 @@ import duckdb
 import pandas as pd
 from dotenv import load_dotenv
 
-from services.dummy_db import DB_PATH, init_dummy_database
+from services.dummy_db import (
+    DB_PATH,
+    ensure_voice_sample_data,
+    init_dummy_database,
+)
 
 load_dotenv()
 
@@ -71,10 +75,26 @@ def load_voice_data(
     if start_date > end_date:
         raise ValueError("start_date must be earlier than or equal to end_date.")
 
+    if source == "duckdb":
+        init_dummy_database(DB_PATH)
+        ensure_voice_sample_data(DB_PATH)
+        connection = duckdb.connect(str(DB_PATH), read_only=True)
+        try:
+            results = [
+                connection.execute(
+                    f"SELECT * FROM VOICE.{table} "
+                    "WHERE ID_DATE BETWEEN ? AND ? ORDER BY ID_DATE, BUNDLE_NAME",
+                    [int(start_date), int(end_date)],
+                ).df()
+                for table in ("PURCHASE", "USAGE", "FIVE_BIRR_USAGE")
+            ]
+        finally:
+            connection.close()
+        return tuple(frame.rename(columns=str.upper) for frame in results)
+
     if source != "oracle":
         raise ValueError(
-            "Voice reporting requires Oracle: the local DuckDB sample database "
-            "does not contain the voice source tables."
+            "Voice source must be 'oracle' or 'duckdb'."
         )
 
     sql_path = BASE_DIR / "sql" / "voice_performance.sql"

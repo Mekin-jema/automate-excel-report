@@ -184,9 +184,17 @@ replaces the start/end date placeholders before executing the queries.
 uv run python voice_performance.py --start=20261019 --end=20261025
 ```
 
-Voice currently always uses Oracle. The command creates one workbook named
-`Voice_Performance_<start>_<end>.xlsx` in `reports/voice/`. It does not send an
-email or produce a separate dashboard workbook.
+Voice defaults to Oracle. Add `--source=duckdb` to use the local synthetic
+sample tables, which are created in the `VOICE` schema when they are missing:
+
+```powershell
+uv run python voice_performance.py --start=20261001 --end=20261031 --source=duckdb
+```
+
+DuckDB Voice values are generated test data, not production results. The
+command creates one workbook named `Voice_Performance_<start>_<end>.xlsx` in
+`reports/voice/`. It does not send an email or produce a separate dashboard
+workbook.
 
 ### Step 3: Read the Voice workbook
 

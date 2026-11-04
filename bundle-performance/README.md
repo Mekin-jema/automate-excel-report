@@ -89,7 +89,9 @@ The voice report runs the three sections in `sql/voice_performance.sql` against 
 
 Run from the project directory:
 ```cmd
-uv run python voice_performance.py --start=20261019 --end=20261030
+uv run python voice_performance.py --start=20261001 --end=20261031 --source=duckdb
 ```
 
-The local DuckDB sample database does not contain voice source tables, so voice report generation requires Oracle credentials.
+The DuckDB source creates reproducible synthetic Voice sample tables in the
+`VOICE` schema when they are missing. These values are for testing only, not
+production reporting. Use `--source=oracle` (the default) for Oracle data.
