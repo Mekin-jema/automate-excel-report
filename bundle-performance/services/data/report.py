@@ -443,6 +443,11 @@ def add_dashboard_sheet(
             )
             chart.x_axis.txPr = axis_text
             chart.y_axis.txPr = axis_text
+            if isinstance(chart, BarChart) and chart.type == "bar":
+                chart.y_axis.txPr = RichText(
+                    bodyPr=RichTextProperties(rot=-2700000),
+                    p=axis_text.p,
+                )
             for axis_title in (chart.x_axis.title, chart.y_axis.title):
                 axis_title.tx.rich.p[0].pPr = ParagraphProperties(
                     defRPr=CharacterProperties(sz=900, b=True)

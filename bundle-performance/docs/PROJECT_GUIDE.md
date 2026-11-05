@@ -375,6 +375,11 @@ from query output to its workbook row/chart.
 2. Inspect schedule settings and run history before enabling scheduling.
 3. Test email using an approved recipient and a draft/display flow first.
 4. Only use direct-send switches after verifying the workbook and recipients.
+5. To display dashboard PNGs inside an HTML email, pass an `inline_images`
+   mapping to `send_outlook_email` and reference each ID with `cid:` in the
+   HTML `<img>` source. Images are embedded in the message body; use Outlook's
+   message zoom controls to enlarge or reduce the view. Keep workbooks in
+   `attachments` when they should remain downloadable report files.
 
 **Checkpoint:** You can distinguish report creation, Outlook draft creation,
 and actual email delivery.
