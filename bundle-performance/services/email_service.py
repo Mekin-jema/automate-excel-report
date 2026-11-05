@@ -107,7 +107,8 @@ def send_outlook_email(
             mail.Body = body
 
         if display_only:
-            mail.Display(True)
+            mail.Save()
+            mail.Display(False)
         else:
             mail.Send()
 

@@ -129,6 +129,8 @@ def add_dashboard_sheet(
     start_date: str,
     end_date: str,
     sample_source_date: str | None = None,
+    dashboard_start_date: str | None = None,
+    dashboard_end_date: str | None = None,
 ):
     ws = wb.create_sheet("Dashboard", 0)
     calc_ws = wb.create_sheet("calculations", 1)
@@ -157,8 +159,10 @@ def add_dashboard_sheet(
             cell.fill = PatternFill("solid", fgColor="006341")
 
     ws.merge_cells("B4:P4")
-    start_label = parse_date_key(start_date).strftime("%d %b %Y")
-    end_label = parse_date_key(end_date).strftime("%d %b %Y")
+    dashboard_start_date = dashboard_start_date or start_date
+    dashboard_end_date = dashboard_end_date or end_date
+    start_label = parse_date_key(dashboard_start_date).strftime("%d %b %Y")
+    end_label = parse_date_key(dashboard_end_date).strftime("%d %b %Y")
     ws["B4"] = f"SAFARICOM ETHIOPIA  |  {start_label} - {end_label}  |  SOURCE-LINKED"
     ws["B4"].font = Font(name="Aptos", size=10, bold=True, color="006341")
     ws["B4"].alignment = Alignment(vertical="center", wrap_text=False, shrink_to_fit=True)
@@ -170,9 +174,15 @@ def add_dashboard_sheet(
         (11, 13, "TRAFFIC", "Traffic", '#,##0.0 "GB"'),
         (14, 16, "EFFECTIVE RATE", "Rate", '#,##0.00 "ETB/GB"'),
     ]
-    start_key = int(parse_date_key(start_date).strftime("%Y%m%d"))
-    end_key = int(parse_date_key(end_date).strftime("%Y%m%d"))
-    report_dates = list(pd.date_range(parse_date_key(start_date), parse_date_key(end_date), freq="D"))
+    start_key = int(parse_date_key(dashboard_start_date).strftime("%Y%m%d"))
+    end_key = int(parse_date_key(dashboard_end_date).strftime("%Y%m%d"))
+    report_dates = list(
+        pd.date_range(
+            parse_date_key(dashboard_start_date),
+            parse_date_key(dashboard_end_date),
+            freq="D",
+        )
+    )
     if not report_dates:
         report_dates = [parse_date_key(start_date)]
     data_start_row = 4
@@ -541,12 +551,17 @@ def create_excel(
     end_date: str,
     sample_source_date: str | None = None,
     output_suffix: str = "",
+    output_path: Path | None = None,
+    dashboard_start_date: str | None = None,
+    dashboard_end_date: str | None = None,
 ) -> Path:
     """
     Creates an Excel workbook matching the exact structure and styling of
     'Unlimted Data peformance summary - Copy.xlsx'.
     """
-    output_path = REPORT_DIR / f"Data_Performance_{start_date}_{end_date}{output_suffix}.xlsx"
+    output_path = output_path or (
+        REPORT_DIR / f"Data_Performance_{start_date}_{end_date}{output_suffix}.xlsx"
+    )
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -1254,7 +1269,16 @@ def create_excel(
         ws_tu.column_dimensions[c].width = width
     ws_tu.column_dimensions["F"].hidden = True
 
-    add_dashboard_sheet(wb, purchases_export, usage_export, start_date, end_date, sample_source_date)
+    add_dashboard_sheet(
+        wb,
+        purchases_export,
+        usage_export,
+        start_date,
+        end_date,
+        sample_source_date,
+        dashboard_start_date,
+        dashboard_end_date,
+    )
     for sheet_name in ("BUNDLE PURCHASE", "TRAFFIC_DATA", "calculations"):
         wb[sheet_name].sheet_state = "hidden"
     wb.active = wb.sheetnames.index("Dashboard")

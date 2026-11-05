@@ -375,11 +375,19 @@ from query output to its workbook row/chart.
 2. Inspect schedule settings and run history before enabling scheduling.
 3. Test email using an approved recipient and a draft/display flow first.
 4. Only use direct-send switches after verifying the workbook and recipients.
-5. To display dashboard PNGs inside an HTML email, pass an `inline_images`
-   mapping to `send_outlook_email` and reference each ID with `cid:` in the
-   HTML `<img>` source. Images are embedded in the message body; use Outlook's
-   message zoom controls to enlarge or reduce the view. Keep workbooks in
-   `attachments` when they should remain downloadable report files.
+5. Preview the responsive report flow with
+   `uv run python send_performance_email.py --source oracle --preview-only`.
+6. The manual one-click sender currently sends DuckDB sample data to
+   `mekin.jemal@safaricom.et`. For production delivery, configure Oracle
+   credentials and `REPORT_EMAIL_TO` in `.env`, change the sender to use
+   `--source oracle --send`, then schedule it while the signed-in user and
+   classic Outlook profile are available.
+7. The daily job uses the last 30 days ending yesterday for its dashboard.
+   Each source has separate history workbooks, preventing DuckDB sample data
+   from being reused as Oracle history. It seeds DuckDB history from existing
+   date-stamped reports, queries only dates missing from the requested period,
+   and retains all collected dates while dashboard KPIs and charts use the
+   selected period. Empty data or calculation errors stop before delivery.
 
 **Checkpoint:** You can distinguish report creation, Outlook draft creation,
 and actual email delivery.

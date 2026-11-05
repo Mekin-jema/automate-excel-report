@@ -1,6 +1,7 @@
 oracledb\
 pandas \
 numpy\
+Pillow\
 python-dotenv\
 streamlit\
 plotly\

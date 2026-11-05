@@ -142,12 +142,15 @@ def _write_raw_sheet(ws, frame, columns):
     ws.sheet_view.showGridLines = False
 
 
-def _create_dashboard(wb, dates, daily_columns, metric_rows):
+def _create_dashboard(
+    wb, dates, daily_columns, metric_rows, reporting_start_date, reporting_end_date
+):
     ws = wb.create_sheet("Dashboard", 0)
     calculations = wb.create_sheet("voice_calculations")
     title_fill = PatternFill("solid", fgColor="006341")
     card_fill = PatternFill("solid", fgColor="F1F8F4")
-    start_label, end_label = dates[0].strftime("%d %b %Y"), dates[-1].strftime("%d %b %Y")
+    start_label = reporting_start_date.strftime("%d %b %Y")
+    end_label = reporting_end_date.strftime("%d %b %Y")
 
     for column in range(2, 17):
         ws.column_dimensions[get_column_letter(column)].width = 13
@@ -502,6 +505,9 @@ def create_voice_excel(
     five_birr_usage: pd.DataFrame,
     start_date: str,
     end_date: str,
+    output_path: Path | None = None,
+    dashboard_start_date: str | None = None,
+    dashboard_end_date: str | None = None,
 ) -> Path:
     """Create a voice report with daily/ISO-week comparisons and hidden source data."""
     for label, date_key in (("start_date", start_date), ("end_date", end_date)):
@@ -545,7 +551,7 @@ def create_voice_excel(
         )
     )
 
-    output_path = REPORT_DIR / f"Voice_Performance_{start_date}_{end_date}.xlsx"
+    output_path = output_path or REPORT_DIR / f"Voice_Performance_{start_date}_{end_date}.xlsx"
     wb = openpyxl.Workbook()
     summary = wb.active
     summary.title = "Summary"
@@ -1038,7 +1044,29 @@ def create_voice_excel(
 
     for sheet_name in ("VOICE PURCHASE DATA", "VOICE USAGE DATA", "5 BIRR DATA"):
         wb[sheet_name].sheet_state = "hidden"
-    _create_dashboard(wb, dates, summary_daily_columns, summary_metric_rows)
+    dashboard_start = datetime.strptime(
+        str(dashboard_start_date or start_date), "%Y%m%d"
+    )
+    dashboard_end = datetime.strptime(
+        str(dashboard_end_date or end_date), "%Y%m%d"
+    )
+    if dashboard_start > dashboard_end:
+        raise ValueError("dashboard_start_date must be earlier than or equal to dashboard_end_date.")
+    dashboard_dates = list(
+        pd.date_range(dashboard_start, dashboard_end, freq="D").to_pydatetime()
+    )
+    dashboard_columns = [
+        summary_daily_columns[(report_date - start).days]
+        for report_date in dashboard_dates
+    ]
+    _create_dashboard(
+        wb,
+        dashboard_dates,
+        dashboard_columns,
+        summary_metric_rows,
+        dashboard_start,
+        dashboard_end,
+    )
     wb.active = wb.sheetnames.index("Dashboard")
     wb.calculation.fullCalcOnLoad = True
     wb.calculation.forceFullCalc = True

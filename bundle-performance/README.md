@@ -81,8 +81,17 @@ uv run python bundle_performance.py --oracle
 uv run python bundle_performance.py --send
 ```
 
-### 3. Windows Task Scheduler (Daily 08:00 AM Run)
-Set up a Windows Task Scheduler action pointing to `bundle_performance.bat` to run automatically every morning unattended.
+### 3. Windows Task Scheduler (Daily Email)
+Once Oracle credentials are configured and validated, set
+`daily_performance_email.bat` to `--source oracle --send` and schedule it to
+run after company data is available. Until then, the batch file uses DuckDB
+preview mode and will not send email.
+
+Because Outlook Desktop automation uses the signed-in Windows profile, select
+**Run only when user is logged on** and keep classic Outlook configured for
+that account. Set `DB_USER`, `DB_PASSWORD`, `DB_DSN`, and `REPORT_EMAIL_TO` in
+the local `.env` first. The script uses Oracle by default and stops without
+sending if a source query is empty or a workbook/dashboard fails validation.
 
 ### 4. Voice Performance Excel Report
 The voice report runs the three sections in `sql/voice_performance.sql` against Oracle and generates a separate `Voice_Performance_...xlsx` workbook with a Data-style `Dashboard` (five KPI cards and six charts), `Summary`, `SUBS`, `QUTY`, `REVENUE`, and `VOICE MINUTES` sheets. Daily and ISO-week comparisons use the shared conditional coloring; voice subscriber weekly values are average daily subscribers. Source-data and dashboard-calculation tabs are hidden by default.
@@ -95,3 +104,49 @@ uv run python voice_performance.py --start=20261001 --end=20261031 --source=duck
 The DuckDB source creates reproducible synthetic Voice sample tables in the
 `VOICE` schema when they are missing. These values are for testing only, not
 production reporting. Use `--source=oracle` (the default) for Oracle data.
+
+### 5. Responsive Executive Performance Email
+
+The Data and Voice email is data-driven: it queries both services for the
+selected period, calculates KPI values from those results, generates the
+standard workbook names (not `_angled` test workbooks), recalculates
+formula-driven sheets in Excel, and embeds refreshed dashboard images using
+the `data_dashboard` and `voice_dashboard` CID references.
+
+```powershell
+# Update history workbooks with missing dates in the last 30 days and preview.
+uv run python send_performance_email.py --source oracle --preview-only
+
+# Open a saved Outlook draft.
+uv run python send_performance_email.py --source oracle
+
+# Send the rolling 30-day dashboard; this is the daily Task Scheduler command.
+uv run python send_performance_email.py --source oracle --send
+```
+
+Use `--date YYYYMMDD` for one date, or `--start YYYYMMDD --end YYYYMMDD` for
+a date range. Historical source rows and fetched-date markers are kept in
+`reports/data/Data_Performance_History.xlsx` and
+`reports/voice/Voice_Performance_History.xlsx`; existing date-stamped
+workbooks are used to seed them. The master workbooks retain full collected
+history, while their dashboards show only the selected reporting period.
+DuckDB uses local sample data. Desktop and mobile HTML previews are written to
+`reports/email_previews/`.
+
+#### Send the report with one click on Windows
+
+Double-click `send_performance_email.bat` in this folder to send the DuckDB
+sample report directly to `mekin.jemal@safaricom.et`. It updates separate
+DuckDB history workbooks and selects the latest 30 days available in the
+sample database. The command window stays open and displays errors if the run
+fails. To put it on the Desktop,
+right-click the batch file and choose **Show more options > Send to > Desktop
+(create shortcut)**.
+
+The batch file requires the project's `.venv` environment (`uv sync` if it is
+missing). DuckDB sample history is stored separately from Oracle history.
+Sending requires Windows, a signed-in classic Outlook profile, and access to
+the specified recipient. The daily scheduler launcher remains preview-only.
+For production, configure `DB_USER`, `DB_PASSWORD`, `DB_DSN`, and
+`REPORT_EMAIL_TO` in `.env`, then change the sender to use `--source oracle`
+and the approved recipient.
