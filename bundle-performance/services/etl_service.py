@@ -5,16 +5,12 @@ ETL Service for Bundle Performance Reporting.
 """
 
 from datetime import datetime, timedelta
-from pathlib import Path
 import re
 import duckdb
 import pandas as pd
 
-from services.shared.database import get_oracle_connection
-from services.dummy_db import DB_PATH, init_dummy_database, BUNDLE_CATALOG
-
-BASE_DIR = Path(__file__).resolve().parents[1]
-SQL_DIR = BASE_DIR / "sql"
+from services.shared.database import get_oracle_connection, read_data_sql_section
+from services.dummy_db import DB_PATH, init_dummy_database
 
 
 def check_table_completeness(target_date: str, source: str = "auto") -> dict:
@@ -43,8 +39,14 @@ def check_table_completeness(target_date: str, source: str = "auto") -> dict:
             try:
                 df = pd.read_sql(check_query, conn)
                 row = df.iloc[0]
-                rev_val = 0.0 if pd.isna(row["TOTAL_REVENUE"]) else float(row["TOTAL_REVENUE"])
-                cnt_val = 0 if pd.isna(row["RECORD_COUNT"]) else int(row["RECORD_COUNT"])
+                rev_val = (
+                    0.0
+                    if pd.isna(row["TOTAL_REVENUE"])
+                    else float(row["TOTAL_REVENUE"])
+                )
+                cnt_val = (
+                    0 if pd.isna(row["RECORD_COUNT"]) else int(row["RECORD_COUNT"])
+                )
                 return {
                     "max_date": None if pd.isna(row["MAX_DATE"]) else row["MAX_DATE"],
                     "min_date": None if pd.isna(row["MIN_DATE"]) else row["MIN_DATE"],
@@ -77,7 +79,9 @@ def check_table_completeness(target_date: str, source: str = "auto") -> dict:
         con.close()
 
 
-def verify_data_completeness(target_date: str, source: str = "auto", max_allowed_gap_pct: float = 40.0) -> dict:
+def verify_data_completeness(
+    target_date: str, source: str = "auto", max_allowed_gap_pct: float = 40.0
+) -> dict:
     """
     Verifies if target date data is fully loaded by comparing revenue with previous date.
     If a large gap is detected (e.g. drop > 40%), it signals not to create report and wait.
@@ -155,10 +159,9 @@ def verify_data_completeness(target_date: str, source: str = "auto", max_allowed
 
 def populate_bundle_purchase_table(target_date: str, source: str = "auto") -> dict:
     """
-    Executes table population for target date using bundle_purchase_table.sql.
+    Executes the purchase-table query from data_performance.sql.
     """
-    sql_path = SQL_DIR / "bundle_purchase_table.sql"
-    raw_query = sql_path.read_text(encoding="utf-8")
+    raw_query = read_data_sql_section("PURCHASE_TABLE")
 
     # Adapt date filters
     adapted_query = re.sub(
@@ -167,7 +170,9 @@ def populate_bundle_purchase_table(target_date: str, source: str = "auto") -> di
         raw_query,
         flags=re.IGNORECASE,
     )
-    adapted_query = adapted_query.replace("{{START_DATE}}", str(target_date)).replace("{{END_DATE}}", str(target_date))
+    adapted_query = adapted_query.replace("{{START_DATE}}", str(target_date)).replace(
+        "{{END_DATE}}", str(target_date)
+    )
 
     if source in ["oracle", "auto"]:
         try:
@@ -177,7 +182,11 @@ def populate_bundle_purchase_table(target_date: str, source: str = "auto") -> di
                 cursor.execute(adapted_query)
                 conn.commit()
                 cursor.close()
-                return {"status": "SUCCESS", "message": f"Oracle table populated for {target_date}", "source": "Oracle"}
+                return {
+                    "status": "SUCCESS",
+                    "message": f"Oracle table populated for {target_date}",
+                    "source": "Oracle",
+                }
             finally:
                 conn.close()
         except Exception as e:
@@ -186,4 +195,8 @@ def populate_bundle_purchase_table(target_date: str, source: str = "auto") -> di
 
     # DuckDB Sample Mode: Ensure table has all requested columns and is populated
     init_dummy_database(DB_PATH)
-    return {"status": "SUCCESS", "message": f"DuckDB table verified for {target_date}", "source": "DuckDB"}
+    return {
+        "status": "SUCCESS",
+        "message": f"DuckDB table verified for {target_date}",
+        "source": "DuckDB",
+    }

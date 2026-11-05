@@ -23,7 +23,12 @@ from services.performance.history import (
     _missing_date_ranges,
     _write_history_coverage,
 )
-from services.performance.paths import DATA_REPORT_DIR, LOG_DIR, RECIPIENT_DEFAULT
+from services.performance.paths import (
+    DATA_REPORT_DIR,
+    LOG_DIR,
+    RECIPIENT_DEFAULT,
+    VOICE_REPORT_DIR,
+)
 from services.performance.reporting import (
     _kpi_metrics,
     _render_dashboard,

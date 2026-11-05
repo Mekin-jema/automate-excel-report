@@ -15,6 +15,39 @@ from services.dummy_db import (
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_SQL_PATH = BASE_DIR / "sql" / "data_performance.sql"
+
+
+def read_data_sql_section(section: str) -> str:
+    """Return one marked Data query from the consolidated SQL file."""
+    expected_sections = ("PURCHASE", "USAGE", "PURCHASE_TABLE")
+    if section not in expected_sections:
+        raise ValueError(f"Unknown Data SQL section: {section}")
+
+    sql_text = DATA_SQL_PATH.read_text(encoding="utf-8")
+    markers = list(
+        re.finditer(
+            r"(?im)^\s*--\s*DATA_QUERY:(PURCHASE|USAGE|PURCHASE_TABLE)\s*$",
+            sql_text,
+        )
+    )
+    actual_sections = tuple(marker.group(1).upper() for marker in markers)
+    if actual_sections != expected_sections:
+        raise ValueError(f"Data SQL file has invalid query sections: {DATA_SQL_PATH}")
+
+    for index, marker in enumerate(markers):
+        if marker.group(1).upper() == section:
+            end = (
+                markers[index + 1].start()
+                if index + 1 < len(markers)
+                else len(sql_text)
+            )
+            query = sql_text[marker.end() : end].strip()
+            if not query:
+                raise ValueError(f"Data SQL section {section} is empty.")
+            return query
+
+    raise ValueError(f"Data SQL section {section} was not found.")
 
 
 def adapt_query_for_duckdb(query: str, start_date: str, end_date: str) -> str:
@@ -26,10 +59,10 @@ def adapt_query_for_duckdb(query: str, start_date: str, end_date: str) -> str:
     query = re.sub(r"/\*\+\s*PARALLEL\(.*?\)\s*\*/", "", query, flags=re.IGNORECASE)
 
     # Adapt Oracle 6-argument REGEXP_REPLACE to DuckDB 4-argument
-    regex_oracle_6arg = (
-        r"REGEXP_REPLACE\s*\(\s*(.*?),\s*(\'.*?\'),\s*(\'.*?\'),\s*\d+,\s*\d+,\s*(\'[a-zA-Z]+\')\s*\)"
+    regex_oracle_6arg = r"REGEXP_REPLACE\s*\(\s*(.*?),\s*(\'.*?\'),\s*(\'.*?\'),\s*\d+,\s*\d+,\s*(\'[a-zA-Z]+\')\s*\)"
+    query = re.sub(
+        regex_oracle_6arg, r"REGEXP_REPLACE(\1, \2, \3, \4)", query, flags=re.DOTALL
     )
-    query = re.sub(regex_oracle_6arg, r"REGEXP_REPLACE(\1, \2, \3, \4)", query, flags=re.DOTALL)
 
     return query
 
@@ -44,16 +77,21 @@ def get_oracle_connection():
     if not user or user == "YOUR_ORACLE_USERNAME" or not dsn:
         raise ValueError("Oracle credentials are not configured in .env file.")
 
-    return oracledb.connect(
-        user=user,
-        password=password,
-        dsn=dsn
+    return oracledb.connect(user=user, password=password, dsn=dsn)
+
+
+def execute_oracle_query(
+    sql_file: str,
+    start_date: str,
+    end_date: str,
+    *,
+    section: str | None = None,
+) -> pd.DataFrame:
+    query = (
+        read_data_sql_section(section)
+        if section
+        else (BASE_DIR / "sql" / sql_file).read_text(encoding="utf-8")
     )
-
-
-def execute_oracle_query(sql_file: str, start_date: str, end_date: str) -> pd.DataFrame:
-    sql_path = BASE_DIR / "sql" / sql_file
-    query = sql_path.read_text(encoding="utf-8")
     query = query.replace("{{START_DATE}}", str(start_date))
     query = query.replace("{{END_DATE}}", str(end_date))
 
@@ -93,9 +131,7 @@ def load_voice_data(
         return tuple(frame.rename(columns=str.upper) for frame in results)
 
     if source != "oracle":
-        raise ValueError(
-            "Voice source must be 'oracle' or 'duckdb'."
-        )
+        raise ValueError("Voice source must be 'oracle' or 'duckdb'.")
 
     sql_path = BASE_DIR / "sql" / "voice_performance.sql"
     sql_text = sql_path.read_text(encoding="utf-8")
@@ -112,11 +148,13 @@ def load_voice_data(
     queries = []
     for index, marker in enumerate(markers):
         end = markers[index + 1].start() if index + 1 < len(markers) else len(sql_text)
-        query = sql_text[marker.end():end].strip()
+        query = sql_text[marker.end() : end].strip()
         query = query.replace("{{START_DATE}}", str(start_date))
         query = query.replace("{{END_DATE}}", str(end_date))
         if "{{START_DATE}}" in query or "{{END_DATE}}" in query:
-            raise ValueError(f"Voice SQL date placeholders were not resolved: {sql_path}")
+            raise ValueError(
+                f"Voice SQL date placeholders were not resolved: {sql_path}"
+            )
         queries.append(query)
 
     connection = get_oracle_connection()
@@ -133,10 +171,19 @@ def load_voice_data(
     )
 
 
-def execute_duckdb_query(sql_file: str, start_date: str, end_date: str) -> pd.DataFrame:
+def execute_duckdb_query(
+    sql_file: str,
+    start_date: str,
+    end_date: str,
+    *,
+    section: str | None = None,
+) -> pd.DataFrame:
     init_dummy_database(DB_PATH)
-    sql_path = BASE_DIR / "sql" / sql_file
-    query = sql_path.read_text(encoding="utf-8")
+    query = (
+        read_data_sql_section(section)
+        if section
+        else (BASE_DIR / "sql" / sql_file).read_text(encoding="utf-8")
+    )
     adapted = adapt_query_for_duckdb(query, start_date, end_date)
 
     con = duckdb.connect(str(DB_PATH), read_only=True)
@@ -151,7 +198,9 @@ def get_latest_sample_date() -> str:
     init_dummy_database(DB_PATH)
     con = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        value = con.execute("SELECT MAX(ID_DATE) FROM BUNDLE_PURCHASE_2026_09_28").fetchone()[0]
+        value = con.execute(
+            "SELECT MAX(ID_DATE) FROM BUNDLE_PURCHASE_2026_09_28"
+        ).fetchone()[0]
         if value is None:
             raise ValueError("The local sample database has no purchase dates.")
         return str(int(value))
@@ -159,28 +208,46 @@ def get_latest_sample_date() -> str:
         con.close()
 
 
-def load_bundle_data(start_date: str, end_date: str, source: str = "auto") -> tuple[pd.DataFrame, pd.DataFrame, str]:
+def load_bundle_data(
+    start_date: str, end_date: str, source: str = "auto"
+) -> tuple[pd.DataFrame, pd.DataFrame, str]:
     """
     Loads bundle usage and purchase data.
     source: 'duckdb', 'oracle', or 'auto' (tries Oracle first, falls back to DuckDB sample DB)
     Returns: (usage_df, purchases_df, source_used)
     """
     if source == "duckdb":
-        usage = execute_duckdb_query("bundle_usage.sql", start_date, end_date)
-        purchases = execute_duckdb_query("bundle_purchase.sql", start_date, end_date)
+        usage = execute_duckdb_query(
+            "data_performance.sql", start_date, end_date, section="USAGE"
+        )
+        purchases = execute_duckdb_query(
+            "data_performance.sql", start_date, end_date, section="PURCHASE"
+        )
         return usage, purchases, "DuckDB (Sample Mode)"
 
     if source == "oracle":
-        usage = execute_oracle_query("bundle_usage.sql", start_date, end_date)
-        purchases = execute_oracle_query("bundle_purchase.sql", start_date, end_date)
+        usage = execute_oracle_query(
+            "data_performance.sql", start_date, end_date, section="USAGE"
+        )
+        purchases = execute_oracle_query(
+            "data_performance.sql", start_date, end_date, section="PURCHASE"
+        )
         return usage, purchases, "Oracle (Production)"
 
     # Auto fallback
     try:
-        usage = execute_oracle_query("bundle_usage.sql", start_date, end_date)
-        purchases = execute_oracle_query("bundle_purchase.sql", start_date, end_date)
+        usage = execute_oracle_query(
+            "data_performance.sql", start_date, end_date, section="USAGE"
+        )
+        purchases = execute_oracle_query(
+            "data_performance.sql", start_date, end_date, section="PURCHASE"
+        )
         return usage, purchases, "Oracle (Production)"
     except Exception:
-        usage = execute_duckdb_query("bundle_usage.sql", start_date, end_date)
-        purchases = execute_duckdb_query("bundle_purchase.sql", start_date, end_date)
+        usage = execute_duckdb_query(
+            "data_performance.sql", start_date, end_date, section="USAGE"
+        )
+        purchases = execute_duckdb_query(
+            "data_performance.sql", start_date, end_date, section="PURCHASE"
+        )
         return usage, purchases, "DuckDB (Sample Mode - Auto Fallback)"
