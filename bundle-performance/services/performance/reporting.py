@@ -1,5 +1,6 @@
 """Validate report values and render dashboard email assets."""
 
+import gc
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -106,6 +107,9 @@ def _render_dashboard(
     excel.Visible = False
     excel.DisplayAlerts = False
     workbook = None
+    dashboard = None
+    chart_objects = None
+    chart = None
     images: list[Image.Image] = []
     try:
         workbook = excel.Workbooks.Open(
@@ -175,11 +179,21 @@ def _render_dashboard(
                 canvas.paste(image, (x, y))
             canvas.save(image_path, format="PNG", optimize=True)
     finally:
-        for image in images:
-            image.close()
-        if workbook is not None:
-            workbook.Close(SaveChanges=True)
-        excel.Quit()
+        try:
+            for image in images:
+                image.close()
+            if workbook is not None:
+                workbook.Close(SaveChanges=True)
+        finally:
+            dashboard = None
+            chart_objects = None
+            chart = None
+            workbook = None
+            try:
+                excel.Quit()
+            finally:
+                excel = None
+                gc.collect()
 
 
 def _write_previews(
