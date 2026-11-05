@@ -544,7 +544,7 @@ def add_dashboard_sheet(
     wb.calculation.calcMode = "auto"
 
 
-def create_excel(
+def create_data_excel(
     usage: pd.DataFrame,
     purchases: pd.DataFrame,
     start_date: str,

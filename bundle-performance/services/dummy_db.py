@@ -14,9 +14,10 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "bundle_sample.duckdb"
+DB_PATH = DATA_DIR / "dummy_database.duckdb"
+# data bundle catalog with base subscriber counts and base MB usage for each bundle
 
-BUNDLE_CATALOG = [
+DATA_BUNDLE_CATALOG = [
     # Gize+
     {
         "name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_1HR",
@@ -168,6 +169,51 @@ BUNDLE_CATALOG = [
     },
 ]
 
+#  voice bundle catalog with base subscriber counts and base minutes per purchase for each bundle
+VOICE_BUNDLE_CATALOG = [
+    {
+        "name": "A.20B_700MIN_WEEKLY_ONNET_VOICE",
+        "category": "Weekly Voice",
+        "price": 20,
+        "base_subs": 1600,
+        "minutes_per_purchase": 700,
+    },
+    {
+        "name": "B.CBU_UNLTD_WEEKLY_COMBO_20BIRR_4032MIN",
+        "category": "Weekly Voice",
+        "price": 20,
+        "base_subs": 1300,
+        "minutes_per_purchase": 4032,
+    },
+    {
+        "name": "C.5Br_Unlimited_Safari_Minutes_FUP_DEFAULT",
+        "category": "Daily Voice",
+        "price": 5,
+        "base_subs": 2200,
+        "minutes_per_purchase": 1440,
+    },
+    {
+        "name": "D.CBU_UNLTD_DAILY_COMBO_5BIRR_1440MIN",
+        "category": "Daily Voice",
+        "price": 5,
+        "base_subs": 1800,
+        "minutes_per_purchase": 1440,
+    },
+    {
+        "name": "E.CBU_UNLTD_HOURLY_COMBO_2BIRR_120MIN",
+        "category": "Hourly Voice",
+        "price": 2,
+        "base_subs": 900,
+        "minutes_per_purchase": 120,
+    },
+    {
+        "name": "F.FriendsAndFamily",
+        "category": "Other Voice",
+        "price": 5,
+        "base_subs": 500,
+        "minutes_per_purchase": 100,
+    },
+]
 
 def init_dummy_database(db_path: Path = DB_PATH, force_recreate: bool = False) -> Path:
     """Creates tables and populates realistic dummy data into DuckDB using fast DataFrame batches."""
@@ -188,7 +234,7 @@ def init_dummy_database(db_path: Path = DB_PATH, force_recreate: bool = False) -
 
     # 1. BI.REF_PRODUCT
     ref_rows = []
-    for idx, b in enumerate(BUNDLE_CATALOG, start=1):
+    for idx, b in enumerate(DATA_BUNDLE_CATALOG, start=1):
         ref_rows.append({"ID_PRODUCT": idx, "DS_NCC_ID": f"{b['name']}{b['suffix']}"})
     df_ref = pd.DataFrame(ref_rows)
     con.register("df_ref", df_ref)
@@ -217,7 +263,7 @@ def init_dummy_database(db_path: Path = DB_PATH, force_recreate: bool = False) -
     for date_key in dates:
         day_factor = 1.15 if (date_key % 7 in [0, 6]) else 1.0
 
-        for idx, b in enumerate(BUNDLE_CATALOG, start=1):
+        for idx, b in enumerate(DATA_BUNDLE_CATALOG, start=1):
             bundle_name = b["name"]
             price = b["price"]
 
@@ -319,7 +365,7 @@ def ensure_october_sample_data(db_path: Path = DB_PATH) -> None:
         traffic_rows = []
         for date_key in missing_dates:
             day_factor = 1.15 if date_key % 7 in (0, 6) else 1.0
-            for product_id, bundle in enumerate(BUNDLE_CATALOG, start=1):
+            for product_id, bundle in enumerate(DATA_BUNDLE_CATALOG, start=1):
                 variation = rng.uniform(0.90, 1.15) * day_factor
                 num_subs = max(int(bundle["base_subs"] * variation / 25), 10)
                 sampled = rng.sample(msisdn_pool, min(num_subs, len(msisdn_pool)))
@@ -394,50 +440,6 @@ def ensure_october_sample_data(db_path: Path = DB_PATH) -> None:
         con.close()
 
 
-VOICE_BUNDLE_CATALOG = [
-    {
-        "name": "A.20B_700MIN_WEEKLY_ONNET_VOICE",
-        "category": "Weekly Voice",
-        "price": 20,
-        "base_subs": 1600,
-        "minutes_per_purchase": 700,
-    },
-    {
-        "name": "B.CBU_UNLTD_WEEKLY_COMBO_20BIRR_4032MIN",
-        "category": "Weekly Voice",
-        "price": 20,
-        "base_subs": 1300,
-        "minutes_per_purchase": 4032,
-    },
-    {
-        "name": "C.5Br_Unlimited_Safari_Minutes_FUP_DEFAULT",
-        "category": "Daily Voice",
-        "price": 5,
-        "base_subs": 2200,
-        "minutes_per_purchase": 1440,
-    },
-    {
-        "name": "D.CBU_UNLTD_DAILY_COMBO_5BIRR_1440MIN",
-        "category": "Daily Voice",
-        "price": 5,
-        "base_subs": 1800,
-        "minutes_per_purchase": 1440,
-    },
-    {
-        "name": "E.CBU_UNLTD_HOURLY_COMBO_2BIRR_120MIN",
-        "category": "Hourly Voice",
-        "price": 2,
-        "base_subs": 900,
-        "minutes_per_purchase": 120,
-    },
-    {
-        "name": "F.FriendsAndFamily",
-        "category": "Other Voice",
-        "price": 5,
-        "base_subs": 500,
-        "minutes_per_purchase": 100,
-    },
-]
 
 
 def ensure_voice_sample_data(db_path: Path = DB_PATH) -> None:
