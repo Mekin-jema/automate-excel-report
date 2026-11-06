@@ -70,9 +70,9 @@ def adapt_query_for_duckdb(query: str, start_date: str, end_date: str) -> str:
 def get_oracle_connection():
     import oracledb
 
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
-    dsn = os.getenv("DB_DSN")
+    user = os.getenv("VAS_DB_USER") or os.getenv("DB_USER")
+    password = os.getenv("VAS_DB_PASSWORD") or os.getenv("DB_PASSWORD")
+    dsn = os.getenv("VAS_DB_DSN") or os.getenv("DB_DSN")
 
     if not user or user == "YOUR_ORACLE_USERNAME" or not dsn:
         raise ValueError("Oracle credentials are not configured in .env file.")

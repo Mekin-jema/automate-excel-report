@@ -1,7 +1,7 @@
 # Performance Email Guide
 
 This guide covers the combined Data and Voice performance email workflow:
-setup, previewing, creating a draft, and sending through Outlook.
+setup, previewing, and sending through SMTP.
 
 ## What the workflow does
 
@@ -15,9 +15,8 @@ Voice report data must be available from the selected source.
 
 ## Setup
 
-Use Windows with Python 3.12 or newer, `uv`, and classic Outlook installed and
-signed in for creating drafts or sending email. Install project dependencies
-from the project root:
+Use Windows with Python 3.12 or newer and `uv`. Excel is required to recalculate
+the report charts. Install project dependencies from the project root:
 
 ```powershell
 uv sync
@@ -31,10 +30,26 @@ DB_USER=your_oracle_username
 DB_PASSWORD=your_oracle_password
 DB_DSN=your_oracle_connection_string
 REPORT_EMAIL_TO=recipient@example.com
+REPORT_EMAIL_CC=copy@example.com
+SMTP_SERVER=your_smtp_server_ip
+SMTP_PORT=25
+SENDER_EMAIL=reports@example.com
+SMTP_USERNAME=reports@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_USE_SSL=false
+SMTP_USE_STARTTLS=false
 ```
 
-Keep `.env` local; do not add real credentials to source files or documentation.
-`--to` can override `REPORT_EMAIL_TO` for one run.
+Replace the example SMTP address, port, sender, and TLS settings with those
+provided by your mail administrator. `EMAIL_RECIPIENTS` and `REPORT_EMAIL` can also configure To recipients;
+`EMAIL_SENDER`, `SMTP_FROM`, and `SMTP_HOST` are accepted aliases. Username and password are
+optional when the server does not require authentication; configure both or
+neither. The default uses plain SMTP on port 25, as in the supplied example.
+Enable TLS only if your mail administrator requires it: set
+`SMTP_USE_STARTTLS=true` for STARTTLS, or `SMTP_USE_SSL=true` and
+`SMTP_USE_STARTTLS=false` for implicit TLS (commonly port 465). Keep `.env`
+local; do not add real credentials to source files or documentation. `--to`
+can override the configured recipients for one run.
 
 ## Run the email workflow
 
@@ -50,13 +65,8 @@ Preview an Oracle report:
 uv run python send_performance_email.py --source oracle --preview-only
 ```
 
-Open an Outlook draft after generating an Oracle report:
-
-```powershell
-uv run python send_performance_email.py --source oracle --to recipient@example.com
-```
-
-Send directly only after verifying the report and recipient:
+Send through SMTP only after verifying SMTP configuration, the report, and
+recipient:
 
 ```powershell
 uv run python send_performance_email.py --source oracle --send --to recipient@example.com
@@ -66,11 +76,11 @@ Choose a reporting period with `--date YYYYMMDD` or with both
 `--start YYYYMMDD --end YYYYMMDD`. If omitted, the workflow uses the last 30
 days ending yesterday for Oracle, or the latest available sample date for
 DuckDB. The default source is Oracle; the default recipient can be configured
-with `REPORT_EMAIL_TO`.
+with `REPORT_EMAIL_TO`, `EMAIL_RECIPIENTS`, or `REPORT_EMAIL`.
 
 Use `--subject "Your subject"` to override the generated subject. The sending
 options `--preview-only` and `--send` are mutually exclusive. If neither is
-specified, the workflow opens a saved Outlook draft; it does not send directly.
+specified, the workflow generates the reports and previews without sending.
 
 ## Outputs and code map
 
@@ -85,7 +95,7 @@ specified, the workflow opens a saved Outlook draft; it does not send directly.
   and HTML previews.
 - `services/performance/paths.py` — output paths and defaults.
 - `services/performance_email.py` — HTML and plain-text email content.
-- `services/email_service.py` — Outlook draft and send integration.
+- `services/email_service.py` — SMTP delivery, attachments, and inline images.
 
 DuckDB and Oracle histories are stored separately. History workbooks retain
 collected dates, while each run's dashboard uses the requested reporting
@@ -102,16 +112,14 @@ delivery.
   and an approved recipient, then deliberately update the scheduled command to
   use `--source oracle --send`.
 
-Scheduled Outlook automation requires Windows and a signed-in user session.
-Use Task Scheduler's **Run only when user is logged on** option for classic
-Outlook automation.
+SMTP delivery does not require Outlook to be installed or running.
 
 ## Troubleshooting
 
 - **Oracle connection fails:** verify `.env`, network/VPN, DSN, and database
   access with your administrator.
-- **Outlook draft or send fails:** verify classic Outlook is installed and
-  signed in, and confirm the recipient is valid.
+- **SMTP send fails:** verify SMTP host, port, TLS mode, credentials, recipient,
+  and network access with your mail administrator.
 - **No report data:** confirm the selected source has both Data and Voice rows
   for the requested period.
 - **Run failed:** review the error and `reports/logs/performance_email.log`.

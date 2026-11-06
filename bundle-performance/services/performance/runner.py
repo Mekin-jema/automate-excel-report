@@ -106,8 +106,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--to",
-        default=os.getenv("REPORT_EMAIL_TO", RECIPIENT_DEFAULT),
-        help="Recipient address (or REPORT_EMAIL_TO in .env).",
+        default=(
+            os.getenv("REPORT_EMAIL_TO")
+            or os.getenv("EMAIL_RECIPIENTS")
+            or RECIPIENT_DEFAULT
+        ),
+        help="Recipient address (or EMAIL_RECIPIENTS/REPORT_EMAIL_TO in .env).",
     )
     parser.add_argument(
         "--subject",
@@ -122,7 +126,7 @@ def main() -> None:
     action.add_argument(
         "--send",
         action="store_true",
-        help="Send directly through the signed-in Outlook profile.",
+        help="Send the email through the configured SMTP server.",
     )
     args = parser.parse_args()
 
@@ -314,28 +318,33 @@ def main() -> None:
         if args.preview_only:
             return
 
-        from services.email_service import send_outlook_email
+        if not args.send:
+            logging.info("Report generated; email not sent. Use --send to deliver it.")
+            return
+
+        from services.email_service import send_smtp_email
 
         subject = (
             args.subject
             or f"Data & Voice Business Performance Report | {reporting_period}"
         )
-        send_outlook_email(
+        email_sent = send_smtp_email(
             subject=subject,
             body=build_plain_text_email(reporting_period, metrics),
             attachments=[data_report, voice_report],
             to=args.to,
+            cc=os.getenv("REPORT_EMAIL_CC"),
+            from_email=os.getenv("SENDER_EMAIL") or os.getenv("EMAIL_SENDER"),
             html_body=html_body,
-            display_only=not args.send,
             inline_images={
                 "data_dashboard": data_image,
                 "voice_dashboard": voice_image,
             },
         )
-        if args.send:
-            logging.info("Performance report email sent to %s.", args.to)
+        if email_sent:
+            logging.info("Performance report email sent to %s via SMTP.", args.to)
         else:
-            logging.info("Saved Outlook draft opened for %s; not sent.", args.to)
+            logging.info("No email recipients configured; skipping email.")
     except Exception:
         logging.exception("Performance email run failed; no email was sent.")
         raise

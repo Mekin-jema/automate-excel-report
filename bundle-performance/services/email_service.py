@@ -1,7 +1,10 @@
 import mimetypes
 import os
 import re
-import sys
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.utils import getaddresses
 from pathlib import Path
 from collections.abc import Mapping, Sequence
 
@@ -10,108 +13,154 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def is_outlook_running() -> bool:
-    """Checks if Outlook desktop application is active."""
-    if sys.platform != "win32":
-        return False
-    try:
-        import win32com.client
-        win32com.client.GetActiveObject("Outlook.Application")
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
         return True
-    except Exception:
+    if normalized in {"0", "false", "no", "off"}:
         return False
+    raise ValueError(f"{name} must be a boolean value.")
 
 
-def send_outlook_email(
+def _addresses(value: str, label: str) -> list[str]:
+    addresses = [
+        address
+        for _, address in getaddresses([value.replace(";", ",")])
+        if address
+    ]
+    if not addresses or any("@" not in address for address in addresses):
+        raise ValueError(f"Valid {label} email address(es) are required.")
+    return addresses
+
+
+def send_smtp_email(
     subject: str,
     body: str,
     attachments: Sequence[str | Path],
     to: str = None,
     cc: str = None,
+    from_email: str = None,
     html_body: str = None,
-    display_only: bool = False,
     inline_images: Mapping[str, str | Path] | None = None,
 ) -> bool:
-    """
-    Sends an automated email via local Outlook Desktop client.
-    Supports To, CC, plain text or rich HTML body, file attachments, and inline
-    images referenced from HTML as ``<img src="cid:content_id">``.
-    """
-    if sys.platform != "win32":
-        raise RuntimeError(
-            "Outlook desktop integration requires Windows. "
-            "Use Microsoft Graph or SMTP for Linux/macOS."
+    """Send an email through the configured SMTP server."""
+    host = os.getenv("SMTP_SERVER") or os.getenv("SMTP_HOST")
+    username = os.getenv("SMTP_USERNAME")
+    password = os.getenv("SMTP_PASSWORD")
+    sender = (
+        from_email
+        or os.getenv("EMAIL_SENDER")
+        or os.getenv("SENDER_EMAIL")
+        or os.getenv("SMTP_FROM")
+        or username
+    )
+    to_recipients = (
+        to
+        or os.getenv("EMAIL_RECIPIENTS")
+        or os.getenv("REPORT_EMAIL_TO")
+        or os.getenv("REPORT_EMAIL")
+    )
+    cc_recipients_value = cc or os.getenv("REPORT_EMAIL_CC")
+
+    if not to_recipients:
+        return False
+    if not host:
+        raise ValueError("SMTP_SERVER or SMTP_HOST is missing from configuration and .env.")
+    if not sender:
+        raise ValueError(
+            "SENDER_EMAIL, EMAIL_SENDER, SMTP_FROM, or SMTP_USERNAME must be configured."
         )
-
-    import win32com.client
-
-    to_recipient = to or os.getenv("REPORT_EMAIL_TO") or os.getenv("REPORT_EMAIL")
-    cc_recipient = cc or os.getenv("REPORT_EMAIL_CC", "")
-
-    if not to_recipient:
-        raise ValueError("Recipient email (To) is missing in configuration and .env")
+    if len(_addresses(sender, "From")) != 1:
+        raise ValueError("Exactly one SMTP sender address must be configured.")
+    if bool(username) != bool(password):
+        raise ValueError("Configure both SMTP_USERNAME and SMTP_PASSWORD, or neither.")
     if inline_images and not html_body:
         raise ValueError("Inline images require an HTML email body.")
 
-    try:
-        outlook = win32com.client.Dispatch("Outlook.Application")
-        mail = outlook.CreateItem(0)
+    port = int(os.getenv("SMTP_PORT", "25"))
+    use_ssl = _env_bool("SMTP_USE_SSL", False)
+    use_starttls = _env_bool("SMTP_USE_STARTTLS", False)
+    if use_ssl and use_starttls:
+        raise ValueError("Enable only one of SMTP_USE_SSL and SMTP_USE_STARTTLS.")
 
-        mail.To = to_recipient
-        if cc_recipient:
-            mail.CC = cc_recipient
+    cc_recipients = (
+        _addresses(cc_recipients_value, "Cc") if cc_recipients_value else []
+    )
+    to_addresses = _addresses(to_recipients, "To")
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = to_recipients.replace(";", ",")
+    if cc_recipients:
+        message["Cc"] = cc_recipients_value.replace(";", ",")
+    message["Subject"] = subject
+    message.set_content(body)
+    html_part = None
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+        html_part = message.get_payload()[-1]
 
-        mail.Subject = subject
+    for attachment in attachments:
+        path = Path(attachment)
+        if not path.is_file():
+            raise FileNotFoundError(f"Email attachment not found: {path}")
+        media_type, _ = mimetypes.guess_type(path.name)
+        maintype, subtype = (media_type or "application/octet-stream").split("/", 1)
+        message.add_attachment(
+            path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=path.name,
+        )
 
-        for attachment in attachments:
-            att_path = Path(attachment)
-            if not att_path.is_file():
-                raise FileNotFoundError(f"Email attachment not found: {att_path}")
-            mail.Attachments.Add(str(att_path.resolve()))
-
-        for content_id, image_path in (inline_images or {}).items():
-            if not re.fullmatch(r"[A-Za-z0-9._-]+", content_id):
-                raise ValueError(f"Invalid inline image content ID: {content_id!r}")
-
-            image = Path(image_path)
-            if not image.is_file():
-                raise FileNotFoundError(f"Inline email image not found: {image}")
-            if f"cid:{content_id}" not in html_body:
-                raise ValueError(
-                    f"HTML email body does not reference inline image {content_id!r}."
-                )
-            media_type, _ = mimetypes.guess_type(image.name)
-            if not media_type or not media_type.startswith("image/"):
-                raise ValueError(f"Unsupported inline image type: {image.suffix}")
-
-            inline_attachment = mail.Attachments.Add(
-                str(image.resolve()), 1, 0, image.name
+    for content_id, image_path in (inline_images or {}).items():
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", content_id):
+            raise ValueError(f"Invalid inline image content ID: {content_id!r}")
+        if f"cid:{content_id}" not in html_body:
+            raise ValueError(
+                f"HTML email body does not reference inline image {content_id!r}."
             )
-            accessor = inline_attachment.PropertyAccessor
-            accessor.SetProperty(
-                "http://schemas.microsoft.com/mapi/proptag/0x3712001F",
-                content_id,
-            )
-            accessor.SetProperty(
-                "http://schemas.microsoft.com/mapi/proptag/0x370E001F",
-                media_type,
-            )
-            accessor.SetProperty(
-                "http://schemas.microsoft.com/mapi/proptag/0x7FFE000B",
-                True,
-            )
+        path = Path(image_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Inline email image not found: {path}")
+        media_type, _ = mimetypes.guess_type(path.name)
+        if not media_type or not media_type.startswith("image/"):
+            raise ValueError(f"Unsupported inline image type: {path.suffix}")
+        if html_part is None:
+            raise ValueError("Inline images require an HTML email body.")
+        subtype = media_type.split("/", 1)[1]
+        html_part.add_related(
+            path.read_bytes(),
+            maintype="image",
+            subtype=subtype,
+            cid=f"<{content_id}>",
+            disposition="inline",
+            filename=path.name,
+        )
 
-        if html_body:
-            mail.HTMLBody = html_body
-        else:
-            mail.Body = body
+    recipients = list(dict.fromkeys(to_addresses + cc_recipients))
+    context = ssl.create_default_context() if use_ssl or use_starttls else None
+    if use_ssl:
+        with smtplib.SMTP_SSL(
+            host, port, timeout=60, context=context
+        ) as server:
+            if username:
+                server.login(username, password)
+            refused = server.send_message(message, to_addrs=recipients)
+    else:
+        with smtplib.SMTP(host, port, timeout=60) as server:
+            server.ehlo()
+            if use_starttls:
+                server.starttls(context=context)
+                server.ehlo()
+            if username:
+                server.login(username, password)
+            refused = server.send_message(message, to_addrs=recipients)
 
-        if display_only:
-            mail.Save()
-            mail.Display(False)
-        else:
-            mail.Send()
-
-        return True
-    except Exception as e:
-        raise RuntimeError(f"Outlook Dispatch failed: {e}. Please ensure Microsoft Outlook is open and signed in.")
+    if refused:
+        raise RuntimeError(
+            "SMTP server refused recipient(s): " + ", ".join(sorted(refused))
+        )
+    return True

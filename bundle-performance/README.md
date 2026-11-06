@@ -1,7 +1,7 @@
 # Data and Voice Performance Email
 
 This project generates Data and Voice Excel reports, builds an executive
-performance email, and creates an Outlook draft or sends it from Windows.
+performance email, and sends it through a configured SMTP server.
 
 Start with the [Performance Email Guide](docs/PROJECT_GUIDE.md) for setup,
 configuration, supported commands, outputs, and troubleshooting.
@@ -26,9 +26,10 @@ Preview production data:
 uv run python send_performance_email.py --source oracle --preview-only
 ```
 
-Without `--preview-only` or `--send`, the workflow opens a saved Outlook draft.
-Use `--send` only after verifying the generated reports and recipient. Select a
-period with `--date YYYYMMDD` or `--start YYYYMMDD --end YYYYMMDD`.
+Without `--send`, the workflow generates reports and previews without sending
+email. Use `--send` only after configuring SMTP and verifying the reports and
+recipient. Select a period with `--date YYYYMMDD` or
+`--start YYYYMMDD --end YYYYMMDD`.
 
 ## SQL query layout
 

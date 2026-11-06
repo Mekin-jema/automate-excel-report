@@ -14,7 +14,7 @@ import schedule
 
 from services.data.database import load_bundle_data
 from services.data.report import create_excel
-from services.email_service import send_outlook_email, is_outlook_running
+from services.email_service import send_smtp_email
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONFIG_DIR = BASE_DIR / "config"
@@ -141,12 +141,9 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
         # 4. Email Dispatch
         email_sent = False
         if cfg.get("send_email", False):
-            if not is_outlook_running():
-                entry["message"] = "Report generated successfully. Email dispatch skipped because Microsoft Outlook is not currently running."
-            else:
-                subject = f"Daily Bundle Performance Report [{start_k} - {end_k}]"
+            subject = f"Daily Bundle Performance Report [{start_k} - {end_k}]"
 
-                html_body = f"""
+            html_body = f"""
                 <div style="font-family: Arial, sans-serif; color: #333333; max-width: 650px;">
                     <h2 style="color: #0b8043; border-bottom: 2px solid #0b8043; padding-bottom: 8px;">
                         Safaricom Daily Bundle Performance Report
@@ -193,22 +190,33 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
                 </div>
                 """
 
-                try:
-                    email_sent = send_outlook_email(
-                        subject=subject,
-                        body=f"Daily Bundle Performance Report: Revenue {total_rev:,.2f} ETB, Subs {total_subs:,.0f}, Usage {total_gb:,.2f} GB.",
-                        attachments=attachments,
-                        to=cfg.get("to_emails"),
-                        cc=cfg.get("cc_emails"),
-                        html_body=html_body,
-                    )
-                except Exception as mail_err:
-                    entry["message"] = f"Report created, but email dispatch failed: {mail_err}"
+            email_sent = send_smtp_email(
+                subject=subject,
+                body=f"Daily Bundle Performance Report: Revenue {total_rev:,.2f} ETB, Subs {total_subs:,.0f}, Usage {total_gb:,.2f} GB.",
+                attachments=attachments,
+                to=(
+                    os.getenv("REPORT_EMAIL_TO")
+                    or os.getenv("EMAIL_RECIPIENTS")
+                    or cfg.get("to_emails")
+                ),
+                cc=os.getenv("REPORT_EMAIL_CC") or cfg.get("cc_emails"),
+                from_email=(
+                    os.getenv("SENDER_EMAIL")
+                    or os.getenv("EMAIL_SENDER")
+                    or cfg.get("sender_email")
+                ),
+                html_body=html_body,
+            )
 
         entry["status"] = "SUCCESS"
         entry["email_sent"] = email_sent
         if not entry["message"]:
-            mail_note = "Email sent via Outlook." if email_sent else ("Email skipped (disabled in config)." if not cfg.get("send_email") else "Email not delivered.")
+            if email_sent:
+                mail_note = "Email sent via SMTP."
+            elif cfg.get("send_email", False):
+                mail_note = "Email skipped (no recipients configured)."
+            else:
+                mail_note = "Email skipped (disabled in config)."
             entry["message"] = f"Successfully generated report ({len(purchases)} purchases, {len(usage)} usage records). {mail_note}"
 
     except Exception as e:

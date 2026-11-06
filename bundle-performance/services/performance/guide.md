@@ -2,7 +2,7 @@
 
 This guide describes the current combined performance-email workflow. It
 covers Data and Voice data loading, history, report generation, dashboard
-images, and Outlook delivery.
+images, and SMTP email delivery.
 
 ## Workflow overview
 
@@ -24,7 +24,7 @@ the runner:
 6. Recalculates each workbook in Excel and exports its six dashboard charts to
    an image.
 7. Builds HTML and plain-text email content and saves HTML previews.
-8. Opens a saved Outlook draft or sends the email if `--send` was specified.
+8. Sends the email through SMTP only if `--send` was specified.
 
 The workflow stops with an error if required data, workbook output, dashboard
 calculations, or email assets are invalid.
@@ -39,7 +39,7 @@ calculations, or email assets are invalid.
 | `services/performance/reporting.py` | Validates report data, calculates KPIs, renders dashboard images, and writes previews. |
 | `services/performance/paths.py` | Report paths, history paths, and recipient default. |
 | `services/performance_email.py` | Builds the responsive HTML and plain-text email bodies. |
-| `services/email_service.py` | Creates or sends Outlook messages and attaches reports and inline images. |
+| `services/email_service.py` | Sends SMTP messages with reports and inline dashboard images. |
 | `services/data/database.py` | Data-loading interface used by the email workflow. |
 | `services/voice/database.py` | Voice-loading interface used by the email workflow. |
 | `services/data/report.py` | Generates the Data workbook. |
@@ -67,27 +67,38 @@ DB_USER=your_oracle_username
 DB_PASSWORD=your_oracle_password
 DB_DSN=your_oracle_connection_string
 REPORT_EMAIL_TO=recipient@example.com
+REPORT_EMAIL_CC=copy@example.com
+SMTP_SERVER=your_smtp_server_ip
+SMTP_PORT=25
+SENDER_EMAIL=reports@example.com
+SMTP_USERNAME=reports@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_USE_SSL=false
+SMTP_USE_STARTTLS=false
 ```
 
-Keep real credentials in the local `.env`; do not put them in source files or
-documentation. The source defaults to Oracle and the recipient can be
-overridden with `--to`.
+Replace the example SMTP address and settings with those provided by your mail
+administrator. `EMAIL_RECIPIENTS` and `REPORT_EMAIL` are also accepted for To
+recipients; `EMAIL_SENDER`, `SMTP_FROM`, and `SMTP_HOST` are accepted aliases.
+`SMTP_USERNAME` and `SMTP_PASSWORD` are optional when the server does not
+require authentication; if used, configure both. The default uses plain SMTP
+on port 25. Enable STARTTLS only if required by the mail administrator with
+`SMTP_USE_STARTTLS=true`, or use implicit TLS (commonly port 465) by setting
+`SMTP_USE_SSL=true` and `SMTP_USE_STARTTLS=false`. Keep real credentials in the
+local `.env`; do not put them in source files or documentation. The source
+defaults to Oracle and the recipient can be overridden with `--to`.
 
-Outlook draft and send functionality requires Windows with classic Outlook
-installed and signed in. Preview-only runs still generate the reports and
-HTML files, but do not open Outlook.
+The workflow does not use Outlook. Preview-only runs still generate the reports
+and HTML files without connecting to SMTP.
 
 ## Command-line options
 
 ```powershell
-# Preview local sample data; do not create an Outlook message
+# Preview local sample data; do not send email
 uv run python send_performance_email.py --source duckdb --preview-only
 
 # Preview production data
 uv run python send_performance_email.py --source oracle --preview-only
-
-# Generate the report and open a saved Outlook draft
-uv run python send_performance_email.py --source oracle --to recipient@example.com
 
 # Send directly after checking the data, reports, and recipient
 uv run python send_performance_email.py --source oracle --send --to recipient@example.com
@@ -106,7 +117,7 @@ be combined with `--start` or `--end`; a range requires both `--start` and
 `--end`.
 
 `--preview-only` and `--send` are mutually exclusive. If neither is supplied,
-the workflow opens a saved Outlook draft; it does not send automatically.
+the workflow generates the reports and previews but does not send email.
 `--subject` optionally overrides the generated subject.
 
 ## Data loading and SQL
@@ -168,8 +179,8 @@ workbooks are attached.
   and Voice records for the requested period.
 - **Workbook or dashboard error:** Check that Excel is installed and that the
   generated workbooks are not open elsewhere.
-- **Outlook error:** Confirm that classic Outlook is installed and signed in.
-  Check the recipient before retrying.
+- **SMTP error:** Verify the SMTP host, port, TLS mode, credentials, recipient,
+  and network access. Check with your mail administrator if needed.
 - **Run failure:** Read the traceback in the console and
   `reports/logs/performance_email.log`. A failure is not a successful send.
 
@@ -177,6 +188,6 @@ workbooks are attached.
 
 1. Start with `--preview-only`.
 2. Review the generated workbooks, KPI values, and HTML preview.
-3. Create a draft without `--send` and verify the Outlook message and
+3. Configure SMTP using the mail administrator's settings and verify the
    recipient.
 4. Use `--send` only when direct delivery is intended and approved.
