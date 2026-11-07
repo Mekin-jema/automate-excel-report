@@ -30,12 +30,14 @@ from services.performance.paths import (
     VOICE_REPORT_DIR,
 )
 from services.performance.reporting import (
+    _daily_performance_summary,
     _kpi_metrics,
     _render_dashboard,
     _validate_report_data,
     _write_previews,
 )
 from services.performance_email import (
+    FOOTER_IMAGE,
     build_html_email,
     build_plain_text_email,
     format_report_period,
@@ -227,6 +229,15 @@ def main() -> None:
             voice_purchases_period,
             voice_usage_period,
         )
+        daily_summary = _daily_performance_summary(
+            end_date,
+            data_purchases,
+            data_usage,
+            voice_purchases,
+            voice_usage,
+            data_covered_dates,
+            voice_covered_dates,
+        )
 
         all_dates = []
         for frame in (
@@ -280,14 +291,31 @@ def main() -> None:
 
         data_image = DATA_REPORT_DIR / f"Data_Dashboard_{start_date}_{end_date}.png"
         voice_image = VOICE_REPORT_DIR / f"Voice_Dashboard_{start_date}_{end_date}.png"
-        _render_dashboard(data_report, data_image, "Data", reporting_period)
-        _render_dashboard(voice_report, voice_image, "Voice", reporting_period)
+        _render_dashboard(
+            data_image,
+            "Data",
+            reporting_period,
+            start_date,
+            end_date,
+            data_purchases_period,
+            data_usage_period,
+        )
+        _render_dashboard(
+            voice_image,
+            "Voice",
+            reporting_period,
+            start_date,
+            end_date,
+            voice_purchases_period,
+            voice_usage_period,
+        )
 
         html_body = build_html_email(
             reporting_period,
             metrics,
             "data_dashboard",
             "voice_dashboard",
+            daily_summary=daily_summary,
         )
         desktop_preview, mobile_preview = _write_previews(
             build_html_email(
@@ -296,6 +324,7 @@ def main() -> None:
                 data_image,
                 voice_image,
                 embed_images=True,
+                daily_summary=daily_summary,
             ),
             start_date,
             end_date,
@@ -326,11 +355,13 @@ def main() -> None:
 
         subject = (
             args.subject
-            or f"Data & Voice Business Performance Report | {reporting_period}"
+            or f"Unlimited Data & Voice Business Performance Report | {reporting_period}"
         )
         email_sent = send_smtp_email(
             subject=subject,
-            body=build_plain_text_email(reporting_period, metrics),
+            body=build_plain_text_email(
+                reporting_period, metrics, daily_summary=daily_summary
+            ),
             attachments=[data_report, voice_report],
             to=args.to,
             cc=os.getenv("REPORT_EMAIL_CC"),
@@ -339,6 +370,7 @@ def main() -> None:
             inline_images={
                 "data_dashboard": data_image,
                 "voice_dashboard": voice_image,
+                "safaricom_email_footer": FOOTER_IMAGE,
             },
         )
         if email_sent:

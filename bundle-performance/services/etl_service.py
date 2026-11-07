@@ -200,3 +200,4 @@ def populate_bundle_purchase_table(target_date: str, source: str = "auto") -> di
         "message": f"DuckDB table verified for {target_date}",
         "source": "DuckDB",
     }
+

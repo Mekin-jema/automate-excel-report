@@ -7,7 +7,6 @@ from email.message import EmailMessage
 from email.utils import getaddresses
 from pathlib import Path
 from collections.abc import Mapping, Sequence
-
 from dotenv import load_dotenv
 
 load_dotenv()

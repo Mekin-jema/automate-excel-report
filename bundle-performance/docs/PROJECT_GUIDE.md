@@ -15,8 +15,9 @@ Voice report data must be available from the selected source.
 
 ## Setup
 
-Use Windows with Python 3.12 or newer and `uv`. Excel is required to recalculate
-the report charts. Install project dependencies from the project root:
+Use Windows with Python 3.12 or newer and `uv`. Matplotlib renders dashboard
+images from the report data, so Microsoft Excel is not required for dashboard
+generation. Install project dependencies from the project root:
 
 ```powershell
 uv sync
@@ -122,4 +123,6 @@ SMTP delivery does not require Outlook to be installed or running.
   and network access with your mail administrator.
 - **No report data:** confirm the selected source has both Data and Voice rows
   for the requested period.
+- **Dashboard rendering fails:** confirm the report data contains non-zero KPI
+  values and dependencies are installed with `uv sync`.
 - **Run failed:** review the error and `reports/logs/performance_email.log`.
