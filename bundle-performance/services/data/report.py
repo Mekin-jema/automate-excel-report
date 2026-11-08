@@ -13,12 +13,14 @@ Generates the exact multi-tab executive Excel report:
 And generates a styled PDF summary report.
 """
 
+from io import BytesIO
 from pathlib import Path
 import openpyxl
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 from openpyxl.chart.marker import Marker
+from openpyxl.drawing.image import Image as SpreadsheetImage
 from openpyxl.chart.text import RichText
 from openpyxl.chart.data_source import NumFmt
 from openpyxl.drawing.text import CharacterProperties, Paragraph as DrawingParagraph, ParagraphProperties, RichTextProperties
@@ -131,6 +133,7 @@ def add_dashboard_sheet(
     sample_source_date: str | None = None,
     dashboard_start_date: str | None = None,
     dashboard_end_date: str | None = None,
+    dashboard_chart_image: bytes | None = None,
 ):
     ws = wb.create_sheet("Dashboard", 0)
     calc_ws = wb.create_sheet("calculations", 1)
@@ -518,22 +521,30 @@ def add_dashboard_sheet(
             chart.series[0].graphicalProperties.line.solidFill = color
         ws.add_chart(chart, anchor)
 
-    daily_end_row = trend_header + len(report_dates)
-    category_end_row = dimension_start + len(purchase_categories) - 1
-    top_bundle_end_row = dimension_start + min(10, len(bundle_names)) - 1
-    top_traffic_end_row = dimension_start + min(10, len(traffic_names)) - 1
-    add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)", value_format="#,##0")
-    quantity_chart = BarChart()
-    quantity_chart.type = "col"
-    add_chart(quantity_chart, 5, 2, "Bundle Purchase Quantity", "I15", "F6C445", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Quantity", value_format="#,##0")
-    add_chart(LineChart(), 6, 2, "Traffic Trend | GB", "B31", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Traffic (GB)", value_format="#,##0.0")
-    add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859", dimension_start, category_end_row, doughnut=True)
-    bundle_chart = BarChart()
-    bundle_chart.type = "bar"
-    add_chart(bundle_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341", dimension_start, top_bundle_end_row, x_axis_title="Revenue (ETB)", y_axis_title="Bundle", value_format="#,##0")
-    traffic_chart = BarChart()
-    traffic_chart.type = "bar"
-    add_chart(traffic_chart, 22, 21, "Top Bundles by Traffic", "I47", "F6C445", dimension_start, top_traffic_end_row, x_axis_title="Traffic (GB)", y_axis_title="Bundle", value_format="#,##0.0")
+    if dashboard_chart_image is None:
+        daily_end_row = trend_header + len(report_dates)
+        category_end_row = dimension_start + len(purchase_categories) - 1
+        top_bundle_end_row = dimension_start + min(10, len(bundle_names)) - 1
+        top_traffic_end_row = dimension_start + min(10, len(traffic_names)) - 1
+        add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)", value_format="#,##0")
+        quantity_chart = BarChart()
+        quantity_chart.type = "col"
+        add_chart(quantity_chart, 5, 2, "Bundle Purchase Quantity", "I15", "F6C445", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Quantity", value_format="#,##0")
+        add_chart(LineChart(), 6, 2, "Traffic Trend | GB", "B31", "00A859", dimension_start, daily_end_row, x_axis_title="Date", y_axis_title="Traffic (GB)", value_format="#,##0.0")
+        add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859", dimension_start, category_end_row, doughnut=True)
+        bundle_chart = BarChart()
+        bundle_chart.type = "bar"
+        add_chart(bundle_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341", dimension_start, top_bundle_end_row, x_axis_title="Revenue (ETB)", y_axis_title="Bundle", value_format="#,##0")
+        traffic_chart = BarChart()
+        traffic_chart.type = "bar"
+        add_chart(traffic_chart, 22, 21, "Top Bundles by Traffic", "I47", "F6C445", dimension_start, top_traffic_end_row, x_axis_title="Traffic (GB)", y_axis_title="Bundle", value_format="#,##0.0")
+    else:
+        dashboard_image_stream = BytesIO(dashboard_chart_image)
+        dashboard_image = SpreadsheetImage(dashboard_image_stream)
+        original_width, original_height = dashboard_image.width, dashboard_image.height
+        dashboard_image.width = 1200
+        dashboard_image.height = round(1200 * original_height / original_width)
+        ws.add_image(dashboard_image, "B15")
 
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -554,6 +565,7 @@ def create_data_excel(
     output_path: Path | None = None,
     dashboard_start_date: str | None = None,
     dashboard_end_date: str | None = None,
+    dashboard_chart_image: bytes | None = None,
 ) -> Path:
     """
     Creates an Excel workbook matching the exact structure and styling of
@@ -1127,7 +1139,7 @@ def create_data_excel(
         last_daily_col = get_column_letter(max(daily_columns))
 
         for header_row in (4, 13, 22, 31, 41):
-            header_cell = ws_summary.cell(header_row, week_col, week_label)
+            header_cell = ws_summary.cell(header_row, week_col)
             header_cell.font = Font(bold=True)
             header_cell.fill = HEADER_FILL
             header_cell.border = THIN_BORDER
@@ -1278,6 +1290,7 @@ def create_data_excel(
         sample_source_date,
         dashboard_start_date,
         dashboard_end_date,
+        dashboard_chart_image,
     )
     for sheet_name in ("BUNDLE PURCHASE", "TRAFFIC_DATA", "calculations"):
         wb[sheet_name].sheet_state = "hidden"

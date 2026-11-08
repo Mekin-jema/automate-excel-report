@@ -258,6 +258,26 @@ def main() -> None:
         history_start = min(history_start, start_date)
         history_end = max(max(all_dates, default=end_date), end_date)
         data_history_path, voice_history_path = _history_paths(args.source)
+        data_image = DATA_REPORT_DIR / f"Data_Dashboard_{start_date}_{end_date}.png"
+        voice_image = VOICE_REPORT_DIR / f"Voice_Dashboard_{start_date}_{end_date}.png"
+        data_chart_image = _render_dashboard(
+            data_image,
+            "Data",
+            reporting_period,
+            start_date,
+            end_date,
+            data_purchases_period,
+            data_usage_period,
+        )
+        voice_chart_image = _render_dashboard(
+            voice_image,
+            "Voice",
+            reporting_period,
+            start_date,
+            end_date,
+            voice_purchases_period,
+            voice_usage_period,
+        )
         data_report = create_data_excel(
             data_usage,
             data_purchases,
@@ -266,6 +286,7 @@ def main() -> None:
             output_path=data_history_path,
             dashboard_start_date=start_date,
             dashboard_end_date=end_date,
+            dashboard_chart_image=data_chart_image,
         )
         voice_report = create_voice_excel(
             voice_purchases,
@@ -276,6 +297,7 @@ def main() -> None:
             output_path=voice_history_path,
             dashboard_start_date=start_date,
             dashboard_end_date=end_date,
+            dashboard_chart_image=voice_chart_image,
         )
         _write_history_coverage(data_history_path, data_covered_dates)
         _write_history_coverage(voice_history_path, voice_covered_dates)
@@ -288,27 +310,6 @@ def main() -> None:
             raise RuntimeError(
                 "A generated report workbook is empty; email was not sent."
             )
-
-        data_image = DATA_REPORT_DIR / f"Data_Dashboard_{start_date}_{end_date}.png"
-        voice_image = VOICE_REPORT_DIR / f"Voice_Dashboard_{start_date}_{end_date}.png"
-        _render_dashboard(
-            data_image,
-            "Data",
-            reporting_period,
-            start_date,
-            end_date,
-            data_purchases_period,
-            data_usage_period,
-        )
-        _render_dashboard(
-            voice_image,
-            "Voice",
-            reporting_period,
-            start_date,
-            end_date,
-            voice_purchases_period,
-            voice_usage_period,
-        )
 
         html_body = build_html_email(
             reporting_period,

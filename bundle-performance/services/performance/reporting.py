@@ -208,7 +208,7 @@ def _render_dashboard(
     end_date: str,
     purchases: pd.DataFrame,
     usage: pd.DataFrame,
-) -> None:
+) -> bytes:
     if service not in {"Data", "Voice"}:
         raise ValueError(f"Unknown dashboard service: {service}")
     image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -511,6 +511,24 @@ def _render_dashboard(
             canvas.paste(image, (x, y))
         canvas.save(image_path, format="PNG", optimize=True)
         canvas.close()
+
+        charts_canvas = Image.new(
+            "RGB",
+            (
+                columns * cell_width + (columns + 1) * gap,
+                rows * cell_height + (rows + 1) * gap,
+            ),
+            "#F4F7F5",
+        )
+        for index, image in enumerate(images):
+            x = gap + (index % columns) * (cell_width + gap)
+            y = gap + (index // columns) * (cell_height + gap)
+            charts_canvas.paste(image, (x, y))
+        with BytesIO() as chart_stream:
+            charts_canvas.save(chart_stream, format="PNG", optimize=True)
+            chart_image = chart_stream.getvalue()
+        charts_canvas.close()
+        return chart_image
     finally:
         for image in images:
             image.close()

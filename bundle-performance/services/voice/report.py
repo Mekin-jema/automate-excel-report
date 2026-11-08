@@ -1,6 +1,7 @@
 """Voice performance Excel report generation."""
 
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 import openpyxl
@@ -11,6 +12,7 @@ from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.legend import Legend
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.text import RichText
+from openpyxl.drawing.image import Image as SpreadsheetImage
 from openpyxl.drawing.text import (
     CharacterProperties,
     Paragraph as DrawingParagraph,
@@ -93,7 +95,7 @@ METRIC_SHEETS = {
 }
 
 _HEADER_FILL = PatternFill("solid", fgColor="006341")
-_SECTION_FILL = PatternFill("solid", fgColor="EAF2F8")
+_DETAIL_ROW_HEIGHT = 15
 _MEDIUM_BORDER = Border(
     left=Side(style="thin", color="006341"),
     right=Side(style="thin", color="006341"),
@@ -143,7 +145,13 @@ def _write_raw_sheet(ws, frame, columns):
 
 
 def _create_dashboard(
-    wb, dates, daily_columns, metric_rows, reporting_start_date, reporting_end_date
+    wb,
+    dates,
+    daily_columns,
+    metric_rows,
+    reporting_start_date,
+    reporting_end_date,
+    dashboard_chart_image=None,
 ):
     ws = wb.create_sheet("Dashboard", 0)
     calculations = wb.create_sheet("voice_calculations")
@@ -285,11 +293,13 @@ def _create_dashboard(
                 f"='Summary'!{get_column_letter(summary_col)}{metric_rows[metric]['total']}",
             )
     categories = list(metric_rows["C.REVENUE"]["categories"].items())
-    for offset, (category, summary_row) in enumerate(categories, start=4):
+    for offset, (category, category_bundles) in enumerate(categories, start=4):
         calculations.cell(offset, 7, category)
         references = ",".join(
-            f"'Summary'!{get_column_letter(column)}{summary_row}"
+            f"'Summary'!{get_column_letter(column)}"
+            f"{metric_rows['C.REVENUE']['bundles'][bundle_name]}"
             for column in daily_columns
+            for bundle_name in category_bundles
         )
         calculations.cell(offset, 8, f"=SUM({references})")
 
@@ -467,26 +477,34 @@ def _create_dashboard(
 
     day_end_row = 3 + len(dates)
     category_end_row = 3 + len(categories)
-    add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859",
-              4, day_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)")
-    quantity_chart = BarChart()
-    quantity_chart.type = "col"
-    add_chart(quantity_chart, 5, 2, "Voice Purchase Quantity", "I15", "F6C445",
-              4, day_end_row, x_axis_title="Date", y_axis_title="Quantity")
-    add_chart(LineChart(), 6, 2, "Voice Minutes Trend", "B31", "00A859",
-              4, day_end_row, x_axis_title="Date", y_axis_title="Minutes", value_format="#,##0.0")
-    add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859",
-              4, category_end_row, doughnut=True)
-    revenue_chart = BarChart()
-    revenue_chart.type = "bar"
-    add_chart(revenue_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341",
-              4, 3 + min(10, len(bundles)), x_axis_title="Revenue (ETB)",
-              y_axis_title="Bundle")
-    minutes_chart = BarChart()
-    minutes_chart.type = "bar"
-    add_chart(minutes_chart, 22, 21, "Top Bundles by Voice Minutes", "I47", "F6C445",
-              4, 3 + min(10, len(bundles)), x_axis_title="Minutes",
-              y_axis_title="Bundle", value_format="#,##0.0")
+    if dashboard_chart_image is None:
+        add_chart(LineChart(), 3, 2, "Revenue Trend | ETB", "B15", "00A859",
+                  4, day_end_row, x_axis_title="Date", y_axis_title="Revenue (ETB)")
+        quantity_chart = BarChart()
+        quantity_chart.type = "col"
+        add_chart(quantity_chart, 5, 2, "Voice Purchase Quantity", "I15", "F6C445",
+                  4, day_end_row, x_axis_title="Date", y_axis_title="Quantity")
+        add_chart(LineChart(), 6, 2, "Voice Minutes Trend", "B31", "00A859",
+                  4, day_end_row, x_axis_title="Date", y_axis_title="Minutes", value_format="#,##0.0")
+        add_chart(DoughnutChart(), 8, 7, "Revenue Mix by Category", "I31", "00A859",
+                  4, category_end_row, doughnut=True)
+        revenue_chart = BarChart()
+        revenue_chart.type = "bar"
+        add_chart(revenue_chart, 15, 14, "Top Bundles by Revenue", "B47", "006341",
+                  4, 3 + min(10, len(bundles)), x_axis_title="Revenue (ETB)",
+                  y_axis_title="Bundle")
+        minutes_chart = BarChart()
+        minutes_chart.type = "bar"
+        add_chart(minutes_chart, 22, 21, "Top Bundles by Voice Minutes", "I47", "F6C445",
+                  4, 3 + min(10, len(bundles)), x_axis_title="Minutes",
+                  y_axis_title="Bundle", value_format="#,##0.0")
+    else:
+        dashboard_image_stream = BytesIO(dashboard_chart_image)
+        dashboard_image = SpreadsheetImage(dashboard_image_stream)
+        original_width, original_height = dashboard_image.width, dashboard_image.height
+        dashboard_image.width = 1200
+        dashboard_image.height = round(1200 * original_height / original_width)
+        ws.add_image(dashboard_image, "B15")
 
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 85
@@ -508,6 +526,7 @@ def create_voice_excel(
     output_path: Path | None = None,
     dashboard_start_date: str | None = None,
     dashboard_end_date: str | None = None,
+    dashboard_chart_image: bytes | None = None,
 ) -> Path:
     """Create a voice report with daily/ISO-week comparisons and hidden source data."""
     for label, date_key in (("start_date", start_date), ("end_date", end_date)):
@@ -623,6 +642,8 @@ def create_voice_excel(
             date_cell.font = Font(bold=True, color="FFFFFF")
             date_cell.alignment = Alignment(horizontal="center")
             date_cell.border = THIN_BORDER
+        ws.row_dimensions[day_row].height = 20
+        ws.row_dimensions[header_row].height = 22
 
         bundle_rows = {}
         category_rows = {}
@@ -739,6 +760,8 @@ def create_voice_excel(
             ws.cell(total_row, col).border = _MEDIUM_BORDER
             if col in daily_columns + weekly_columns:
                 ws.cell(total_row, col).fill = SUBTOTAL_FILL
+        for data_row in data_rows:
+            ws.row_dimensions[data_row].height = _DETAIL_ROW_HEIGHT
 
         ws.column_dimensions["A"].width = 3
         ws.column_dimensions["B"].width = 42
@@ -751,11 +774,6 @@ def create_voice_excel(
             ws.column_dimensions[get_column_letter(col)].width = 15
         ws.column_dimensions[get_column_letter(separator_column)].width = 3
         ws.freeze_panes = f"{get_column_letter(daily_columns[0])}{data_start_row}"
-        for bundle_row in bundle_rows.values():
-            ws.cell(bundle_row, 2).alignment = Alignment(
-                vertical="center", wrap_text=True
-            )
-            ws.row_dimensions[bundle_row].height = 30
         ws.sheet_view.showGridLines = False
         ws.sheet_properties.tabColor = "006341"
         row_maps[metric_code] = {
@@ -780,68 +798,62 @@ def create_voice_excel(
     ).font = Font(italic=True, color="64748B")
 
     summary_header_row = 4
-    for col_index, label in enumerate(
-        ("BUNDLE / CATEGORY", "ROW TYPE", "UNIT"), start=2
-    ):
-        cell = summary.cell(summary_header_row, col_index, label)
-        cell.fill = _HEADER_FILL
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = THIN_BORDER
     for idx, report_date in enumerate(dates):
         col = summary_daily_columns[idx]
-        summary.cell(3, col, report_date.strftime("%a")).fill = _HEADER_FILL
-        summary.cell(3, col).font = Font(bold=True, color="FFFFFF")
-        summary.cell(3, col).alignment = Alignment(horizontal="center")
-        date_cell = summary.cell(summary_header_row, col, report_date)
-        date_cell.number_format = "d-mmm"
-        date_cell.fill = _HEADER_FILL
-        date_cell.font = Font(bold=True, color="FFFFFF")
-        date_cell.alignment = Alignment(horizontal="center")
-        date_cell.border = THIN_BORDER
-
+        day_cell = summary.cell(3, col, report_date.strftime("%a"))
+        day_cell.fill = _HEADER_FILL
+        day_cell.font = Font(bold=True, color="FFFFFF")
+        day_cell.alignment = Alignment(horizontal="center")
     for week_index, (week_key, _) in enumerate(summary_weekly_groups):
         col = summary_weekly_columns[week_index]
-        week_label = f"Wk{week_key[1]}"
-        summary.cell(2, col, "WEEKLY").fill = _HEADER_FILL
-        summary.cell(2, col).font = Font(bold=True, color="FFFFFF")
-        summary.cell(3, col, week_label).fill = _HEADER_FILL
-        summary.cell(3, col).font = Font(bold=True, color="FFFFFF")
-        summary.cell(3, col).alignment = Alignment(horizontal="center")
-        week_header = summary.cell(summary_header_row, col, week_label)
-        week_header.fill = _HEADER_FILL
-        week_header.font = Font(bold=True, color="FFFFFF")
-        week_header.alignment = Alignment(horizontal="center")
-        week_header.border = THIN_BORDER
+        weekly_cell = summary.cell(2, col, "WEEKLY")
+        weekly_cell.fill = _HEADER_FILL
+        weekly_cell.font = Font(bold=True, color="FFFFFF")
+        week_cell = summary.cell(3, col, f"Wk{week_key[1]}")
+        week_cell.fill = _HEADER_FILL
+        week_cell.font = Font(bold=True, color="FFFFFF")
+        week_cell.alignment = Alignment(horizontal="center")
 
     summary_rows = []
     summary_metric_rows = {}
-    row = summary_header_row + 1
+    summary_categories = {}
+    for bundle in VOICE_BUNDLES:
+        summary_categories.setdefault(bundle["category"], []).append(bundle["name"])
+
+    row = summary_header_row
     summary_sections = (
-        ("A.SUBS", "SUBSCRIBERS"),
-        ("B.QUANTITY", "PURCHASE QUANTITY"),
-        ("C.REVENUE", "REVENUE (ETB)"),
-        ("USAGE", "VOICE MINUTES"),
-        ("MIN/SUB", "MINUTES PER SUBSCRIBER"),
+        ("A.SUBS", "SUBSCRIBERS", "SUBS"),
+        ("B.QUANTITY", "PURCHASE QUANTITY", "QUANTITY"),
+        ("C.REVENUE", "REVENUE (ETB)", "REVENUE"),
+        ("USAGE", "VOICE MINUTES", "MINUTES"),
+        ("MIN/SUB", "MINUTES PER SUBSCRIBER", "MIN/SUB"),
     )
-    for metric_code, section_label in summary_sections:
-        section_row = row
-        summary.cell(section_row, 3, section_label)
-        for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
-            cell = summary.cell(section_row, col)
-            cell.fill = _SECTION_FILL
-            cell.font = Font(bold=True, color="006341")
+    display_columns = (
+        list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns
+    )
+    for metric_code, section_label, row_type in summary_sections:
+        section_header_row = row
+        summary.cell(section_header_row, 3, section_label)
+        summary.cell(section_header_row, 4, "ROW TYPE")
+        for idx, report_date in enumerate(dates):
+            date_cell = summary.cell(section_header_row, summary_daily_columns[idx], report_date)
+            date_cell.number_format = "d-mmm"
+        for col in display_columns:
+            cell = summary.cell(section_header_row, col)
+            cell.fill = _HEADER_FILL
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = THIN_BORDER
         row += 1
+
         section_bundles = {}
-        section_categories = {}
         for bundle in VOICE_BUNDLES:
             bundle_name = bundle["name"]
             bundle_row = row
             section_bundles[bundle_name] = bundle_row
-            summary.cell(bundle_row, 2, bundle["display_name"])
-            summary.cell(bundle_row, 3, "Bundle")
-            summary.cell(bundle_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
+            summary.cell(bundle_row, 2, bundle["category"])
+            summary.cell(bundle_row, 3, bundle["display_name"])
+            summary.cell(bundle_row, 4, row_type)
             for metric_col, summary_col in zip(daily_columns, summary_daily_columns):
                 metric_date_col = get_column_letter(metric_col)
                 if metric_code == "MIN/SUB":
@@ -855,189 +867,118 @@ def create_voice_excel(
                     sheet_name = METRIC_SHEETS[metric_code]
                     metric_row = row_maps[metric_code]["bundles"][bundle_name]
                     formula = f"='{sheet_name}'!{metric_date_col}{metric_row}"
+                for col in range(2, summary_daily_columns[-1] + 1):
+                    summary.cell(bundle_row, col).border = THIN_BORDER
                 cell = summary.cell(bundle_row, summary_col, formula)
                 cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
                 cell.alignment = Alignment(horizontal="right")
                 cell.border = THIN_BORDER
-            row += 1
-
-        for category in dict.fromkeys(bundle["category"] for bundle in VOICE_BUNDLES):
-            category_bundles = [
-                bundle for bundle in VOICE_BUNDLES if bundle["category"] == category
-            ]
-            subtotal_row = row
-            section_categories[category] = subtotal_row
-            summary.cell(subtotal_row, 2, category)
-            summary.cell(subtotal_row, 3, "Subtotal")
-            summary.cell(subtotal_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
-            category_first_row = section_bundles[category_bundles[0]["name"]]
-            category_last_row = section_bundles[category_bundles[-1]["name"]]
-            for metric_col, summary_col in zip(daily_columns, summary_daily_columns):
-                letter = get_column_letter(summary_col)
                 if metric_code == "MIN/SUB":
-                    metric_letter = get_column_letter(metric_col)
-                    voice_rows = [
-                        row_maps["USAGE"]["bundles"][item["name"]]
-                        for item in category_bundles
-                    ]
-                    subs_rows_for_category = [
-                        row_maps["A.SUBS"]["bundles"][item["name"]]
-                        for item in category_bundles
-                    ]
-                    voice_sum = "+".join(
-                        f"'VOICE MINUTES'!{metric_letter}{source_row}"
-                        for source_row in voice_rows
-                    )
-                    subs_sum = "+".join(
-                        f"'SUBS'!{metric_letter}{source_row}"
-                        for source_row in subs_rows_for_category
-                    )
-                    formula = f"=IFERROR(({voice_sum})/({subs_sum}),\"\")"
-                else:
-                    formula = f"=SUM({letter}{category_first_row}:{letter}{category_last_row})"
-                summary.cell(subtotal_row, summary_col, formula)
-                summary.cell(subtotal_row, summary_col).number_format = (
-                    RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
-                )
+                    cell.fill = PatternFill("solid", fgColor="D5F5E3")
             row += 1
 
         total_row = row
-        summary.cell(total_row, 2, f"TOTAL {section_label}")
-        summary.cell(total_row, 3, "Total")
-        summary.cell(total_row, 4, "Min/Sub" if metric_code == "MIN/SUB" else section_label)
-        if metric_code == "MIN/SUB":
-            voice_total_row = summary_metric_rows["USAGE"]["total"]
-            subs_total_row = summary_metric_rows["A.SUBS"]["total"]
-            for col in summary_daily_columns:
-                letter = get_column_letter(col)
-                summary.cell(
-                    total_row, col,
-                    f'=IFERROR({letter}{voice_total_row}/{letter}{subs_total_row},"")',
-                )
-                summary.cell(total_row, col).number_format = RATE_FORMAT
-        else:
-            for col in summary_daily_columns:
-                letter = get_column_letter(col)
-                subtotal_refs = ",".join(
-                    f"{letter}{subtotal}" for subtotal in section_categories.values()
-                )
-                summary.cell(total_row, col, f"=SUM({subtotal_refs})")
-                summary.cell(total_row, col).number_format = NUM_FORMAT
-        row += 1
-
-        summary_metric_rows[metric_code] = {
-            "bundles": section_bundles,
-            "categories": section_categories,
-            "total": total_row,
-            "all": (
-                list(section_bundles.values())
-                + list(section_categories.values())
-                + [total_row]
-            ),
-        }
-        summary_rows.extend(summary_metric_rows[metric_code]["all"])
-
-    for metric_code, section in summary_metric_rows.items():
-        for bundle in VOICE_BUNDLES:
-            target_row = section["bundles"][bundle["name"]]
-            for week_index, (_, source_columns) in enumerate(summary_weekly_groups):
-                target_col = summary_weekly_columns[week_index]
-                if metric_code == "MIN/SUB":
-                    source_daily_cells = ",".join(
-                        f"{get_column_letter(source_col)}{target_row}"
-                        for source_col in source_columns
-                    )
-                    formula = f"=AVERAGE({source_daily_cells})"
-                elif metric_code == "A.SUBS":
-                    source_daily_cells = ",".join(
-                        f"{get_column_letter(source_col)}{target_row}"
-                        for source_col in source_columns
-                    )
-                    formula = f"=AVERAGE({source_daily_cells})"
-                else:
-                    source_daily_cells = ",".join(
-                        f"{get_column_letter(source_col)}{target_row}"
-                        for source_col in source_columns
-                    )
-                    formula = f"=SUM({source_daily_cells})"
-                cell = summary.cell(target_row, target_col, formula)
-                cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
-        for category, target_row in section["categories"].items():
-            category_bundles = [
-                bundle for bundle in VOICE_BUNDLES if bundle["category"] == category
-            ]
-            for week_index, _ in enumerate(summary_weekly_groups):
-                col = summary_weekly_columns[week_index]
-                letter = get_column_letter(col)
-                bundle_week_cells = ",".join(
-                    f"{letter}{section['bundles'][bundle['name']]}"
-                    for bundle in category_bundles
-                )
-                if metric_code == "MIN/SUB":
-                    daily_values = ",".join(
-                        f"{get_column_letter(source_col)}{target_row}"
-                        for source_col in summary_daily_columns
-                    )
-                    formula = f'=IFERROR(AVERAGE({daily_values}),"")'
-                else:
-                    formula = f"=SUM({bundle_week_cells})"
-                summary.cell(target_row, col, formula)
-                summary.cell(target_row, col).number_format = (
-                    RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
-                )
-
-        for week_index, _ in enumerate(summary_weekly_groups):
-            col = summary_weekly_columns[week_index]
+        summary.cell(total_row, 3, f"TOTAL {section_label}")
+        summary.cell(total_row, 4, row_type)
+        for col in range(2, summary_daily_columns[-1] + 1):
+            summary.cell(total_row, col).border = TOTAL_BORDER
+        for col in summary_daily_columns:
             letter = get_column_letter(col)
             if metric_code == "MIN/SUB":
-                daily_values = ",".join(
-                    f"{get_column_letter(source_col)}{section['total']}"
-                    for source_col in summary_daily_columns
-                )
-                formula = f'=IFERROR(AVERAGE({daily_values}),"")'
+                voice_total_row = summary_metric_rows["USAGE"]["total"]
+                subs_total_row = summary_metric_rows["A.SUBS"]["total"]
+                formula = f'=IFERROR({letter}{voice_total_row}/{letter}{subs_total_row},"")'
             else:
-                formula = "=SUM(" + ",".join(
-                    f"{letter}{subtotal}"
-                    for subtotal in section["categories"].values()
-                ) + ")"
-            summary.cell(section["total"], col, formula)
-            summary.cell(section["total"], col).number_format = (
-                RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
-            )
+                first_bundle_row = next(iter(section_bundles.values()))
+                last_bundle_row = list(section_bundles.values())[-1]
+                formula = f"=SUM({letter}{first_bundle_row}:{letter}{last_bundle_row})"
+            cell = summary.cell(total_row, col, formula)
+            cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
+            cell.fill = SUBTOTAL_FILL
+            cell.font = Font(bold=True)
+            cell.border = TOTAL_BORDER
+        for col in summary_weekly_columns:
+            letter = get_column_letter(col)
+            if metric_code == "MIN/SUB":
+                voice_total_row = summary_metric_rows["USAGE"]["total"]
+                subs_total_row = summary_metric_rows["A.SUBS"]["total"]
+                formula = f'=IFERROR({letter}{voice_total_row}/{letter}{subs_total_row},"")'
+            else:
+                first_bundle_row = next(iter(section_bundles.values()))
+                last_bundle_row = list(section_bundles.values())[-1]
+                formula = f"=SUM({letter}{first_bundle_row}:{letter}{last_bundle_row})"
+            cell = summary.cell(total_row, col, formula)
+            cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
+            cell.fill = SUBTOTAL_FILL
+            cell.font = Font(bold=True)
+            cell.border = TOTAL_BORDER
+            if metric_code == "MIN/SUB":
+                cell.fill = PatternFill("solid", fgColor="D5F5E3")
+
+        section = {
+            "bundles": section_bundles,
+            "categories": summary_categories,
+            "total": total_row,
+            "all": list(section_bundles.values()) + [total_row],
+        }
+        summary_metric_rows[metric_code] = section
+        summary_rows.extend(section["all"])
+
+        for bundle in VOICE_BUNDLES:
+            target_row = section_bundles[bundle["name"]]
+            for week_index, (_, source_columns) in enumerate(summary_weekly_groups):
+                target_col = summary_weekly_columns[week_index]
+                source_cells = ",".join(
+                    f"{get_column_letter(source_col)}{target_row}"
+                    for source_col in source_columns
+                )
+                aggregation = (
+                    "AVERAGE"
+                    if metric_code in ("A.SUBS", "MIN/SUB")
+                    else "SUM"
+                )
+                cell = summary.cell(
+                    target_row,
+                    target_col,
+                    f"={aggregation}({source_cells})",
+                )
+                cell.number_format = RATE_FORMAT if metric_code == "MIN/SUB" else NUM_FORMAT
+                cell.border = THIN_BORDER
+                if metric_code == "MIN/SUB":
+                    cell.fill = PatternFill("solid", fgColor="D5F5E3")
+
+        row += 2
 
     apply_comparison_formatting(
         summary, summary_rows, summary_daily_columns, summary_weekly_columns
     )
-    for metric_code, section in summary_metric_rows.items():
-        for subtotal_row in section["categories"].values():
-            for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
-                cell = summary.cell(subtotal_row, col)
+    for bundle_row in summary_metric_rows["MIN/SUB"]["bundles"].values():
+        for col in summary_daily_columns + summary_weekly_columns:
+            summary.cell(bundle_row, col).fill = PatternFill(
+                "solid", fgColor="D5F5E3"
+            )
+    for section in summary_metric_rows.values():
+        for total_row in (section["total"],):
+            for col in display_columns:
+                cell = summary.cell(total_row, col)
                 cell.font = Font(bold=True)
                 cell.border = TOTAL_BORDER
-                if col in summary_daily_columns + summary_weekly_columns:
-                    cell.fill = SUBTOTAL_FILL
-        for col in list(range(2, summary_daily_columns[-1] + 1)) + summary_weekly_columns:
-            cell = summary.cell(section["total"], col)
-            cell.font = Font(bold=True)
-            cell.border = _MEDIUM_BORDER
-            if col in summary_daily_columns + summary_weekly_columns:
                 cell.fill = SUBTOTAL_FILL
+        for bundle_row in section["bundles"].values():
+            summary.cell(bundle_row, 2).alignment = Alignment(
+                vertical="center", wrap_text=True
+            )
 
     for row_index in range(1, row):
         summary.cell(row_index, summary_separator_column).fill = PatternFill()
     summary.column_dimensions["A"].width = 3
     summary.column_dimensions["B"].width = 24
     summary.column_dimensions["B"].hidden = True
-    summary.column_dimensions["C"].width = 14
-    summary.column_dimensions["D"].width = 22
+    summary.column_dimensions["C"].width = 42
+    summary.column_dimensions["D"].width = 16
     for col in summary_daily_columns + summary_weekly_columns:
         summary.column_dimensions[get_column_letter(col)].width = 15
     summary.column_dimensions[get_column_letter(summary_separator_column)].width = 3
-    for metric_section in summary_metric_rows.values():
-        for bundle_row in metric_section["bundles"].values():
-            summary.cell(bundle_row, 2).alignment = Alignment(
-                vertical="center", wrap_text=True
-            )
     summary.freeze_panes = f"{get_column_letter(summary_daily_columns[0])}{summary_header_row + 1}"
     summary.sheet_view.showGridLines = False
     summary.sheet_properties.tabColor = "006341"
@@ -1066,6 +1007,7 @@ def create_voice_excel(
         summary_metric_rows,
         dashboard_start,
         dashboard_end,
+        dashboard_chart_image,
     )
     wb.active = wb.sheetnames.index("Dashboard")
     wb.calculation.fullCalcOnLoad = True
