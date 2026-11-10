@@ -1,4 +1,26 @@
-"""Responsive, data-driven Data and Voice performance email content."""
+"""
+Responsive Commercial Email Rendering Engine.
+==============================================
+Constructs responsive, brand-aligned HTML and plain-text performance emails for
+Safaricom Ethiopia commercial leadership.
+
+Design & Structural Standards:
+1. Safaricom Visual Identity:
+   - Primary Green (#00B050), Deep Forest Green (#087A3B), Accent Red (#EF373E),
+     Safaricom Yellow (#FFC20E), Pale Background (#EEF3EE).
+   - Official Safaricom Email Footer brand banner.
+2. Email Client Compatibility:
+   - MSO conditional tables (`<!--[if mso]>`) ensuring rigid 800px layout in Microsoft Outlook.
+   - Fluid responsive CSS media queries (`@media only screen and (max-width:620px)`)
+     collapsing two-column cards into single-column vertical flows on mobile devices.
+   - Dual image rendering modes:
+       a) CID Inline (`cid:xxx`) for production SMTP / Outlook dispatch.
+       b) Base64 Data-URI (`data:image/png;base64,...`) for standalone browser previews.
+3. Commercial Intelligence Features:
+   - Day-over-Day (DoD) metric delta pills with dynamic color badges (growth/drop/neutral).
+   - Natural language executive commentary synthesizing trends across Revenue, Subs, Qty, and Usage.
+   - Side-by-side Data vs Voice KPI breakdown cards.
+"""
 
 from __future__ import annotations
 
@@ -10,35 +32,51 @@ from html import escape
 from pathlib import Path
 from typing import TypedDict
 
-"""
-Safaricom Ethiopia-inspired email palette.
-Primary green and red are sampled from the supplied Safaricom Ethiopia logo image;
-neutral and supporting shades are UI colors chosen for readability.
-"""
-BRAND_GREEN = "#00B050"
-BRAND_DEEP_GREEN = "#087A3B"
-BRAND_RED = "#EF373E"
-BRAND_YELLOW = "#FFC20E"
-BRAND_PALE_GREEN = "#EAF6ED"
-BRAND_BACKGROUND = "#EEF3EE"
+# =====================================================================
+# SAFARICOM ETHIOPIA BRAND CONSTANTS & STYLING PALETTE
+# =====================================================================
+BRAND_GREEN = "#00B050"          # Safaricom Primary Brand Green
+BRAND_DEEP_GREEN = "#087A3B"     # Deep Executive Green for Voice & accents
+BRAND_RED = "#EF373E"            # Safaricom Alert Red
+BRAND_YELLOW = "#FFC20E"         # Safaricom Highlight Yellow
+BRAND_PALE_GREEN = "#EAF6ED"     # Soft background for callout containers
+BRAND_BACKGROUND = "#EEF3EE"     # Outer email canvas neutral tone
+
+# Brand footer banner asset path and MIME Content-ID
 FOOTER_IMAGE = Path(__file__).with_name("assets") / "safaricom_email_footer.png"
 FOOTER_IMAGE_CID = "safaricom_email_footer"
 
+# Universal font stack prioritizing Microsoft corporate desktop rendering
 FONT_STACK = "'Segoe UI',Arial,Helvetica,sans-serif"
 
+# Executive reporting metrics tracked in period KPI cards
 KPI_LABELS = ("Revenue", "Purchase Quantity", "Usage")
 KPI_ACCENTS = (BRAND_GREEN, BRAND_DEEP_GREEN, BRAND_YELLOW)
 DAILY_METRIC_LABELS = ("Revenue", "Bundle Subscribers", "Purchase Quantity", "Usage")
 
-# (background, text) for the movement pills in the daily summary.
+# CSS badge styling for Day-over-Day movement indicators (background_color, text_color)
 MOVEMENT_PILLS = {
-    "positive": ("#E3F5E8", "#087A3B"),
-    "negative": ("#FDE8E9", "#C62830"),
-    "neutral": ("#EEF1EF", "#5A6A61"),
+    "positive": ("#E3F5E8", "#087A3B"),   # Soft green pill for positive commercial growth
+    "negative": ("#FDE8E9", "#C62830"),   # Soft red pill for negative commercial drop
+    "neutral": ("#EEF1EF", "#5A6A61"),    # Soft slate pill for unchanged / baseline days
 }
 
 
 class DailySummary(TypedDict):
+    """
+    Type-annotated container for Day-over-Day commercial performance summaries.
+    
+    Fields:
+    -------
+    reporting_date : str
+        Target report date (e.g., '31 October 2026').
+    comparison_date : str
+        Baseline comparison date (typically T-1, e.g., '30 October 2026').
+    data : Mapping[str, tuple[float | None, float | None]]
+        Data portfolio indicators mapping metric name to (today_value, yesterday_value).
+    voice : Mapping[str, tuple[float | None, float | None]]
+        Voice portfolio indicators mapping metric name to (today_value, yesterday_value).
+    """
     reporting_date: str
     comparison_date: str
     data: Mapping[str, tuple[float | None, float | None]]
@@ -46,6 +84,14 @@ class DailySummary(TypedDict):
 
 
 def format_report_period(start_date: str, end_date: str) -> str:
+    """
+    Format a start and end YYYYMMDD date pair into an executive-ready period string.
+
+    Examples:
+    - '20261019', '20261019' -> '19 October 2026'
+    - '20261002', '20261031' -> '2–31 October 2026'
+    - '20260928', '20261004' -> '28 Sep 2026 – 4 Oct 2026'
+    """
     start = datetime.strptime(start_date, "%Y%m%d")
     end = datetime.strptime(end_date, "%Y%m%d")
     if start == end:
@@ -61,6 +107,24 @@ def _image_source(
     embed: bool,
     content_id: str | None = None,
 ) -> str:
+    """
+    Resolve an image source URL based on the email delivery context.
+
+    Parameters:
+    -----------
+    image : str | Path
+        Filesystem path to the PNG image or default CID identifier.
+    embed : bool
+        If True, base64-encodes the image into a data-uri (used for offline HTML preview).
+        If False, returns a 'cid:<content_id>' reference for MIME email transmission.
+    content_id : str, optional
+        Explicit Content-ID string to override default.
+
+    Returns:
+    --------
+    str
+        Either 'cid:...' or 'data:image/png;base64,...'.
+    """
     if not embed:
         return f"cid:{content_id or image}"
 
@@ -75,6 +139,7 @@ def _image_source(
 
 
 def _validate_metrics(metrics: Mapping[str, Sequence[str]]) -> None:
+    """Ensure all required executive KPI keys are present and contain both Data and Voice values."""
     missing = set(KPI_LABELS) - set(metrics)
     if missing:
         raise ValueError(f"Missing report KPI values: {', '.join(sorted(missing))}")
@@ -90,6 +155,14 @@ def _validate_metrics(metrics: Mapping[str, Sequence[str]]) -> None:
 
 
 def _daily_metric_value(label: str, value: float | None, *, voice: bool) -> str:
+    """
+    Format numeric values into standard Safaricom commercial presentation strings.
+
+    Units:
+    - Revenue: ETB (rounded integer)
+    - Subscribers / Quantity: comma-separated count
+    - Usage: GB (1 decimal place) for Data; Minutes (integer) for Voice.
+    """
     if value is None:
         return "Not available"
     if label == "Revenue":
@@ -104,6 +177,15 @@ def _daily_metric_value(label: str, value: float | None, *, voice: bool) -> str:
 def _daily_movement(
     current: float | None, previous: float | None
 ) -> tuple[str, str, str | None]:
+    """
+    Calculate Day-over-Day percentage change, direction, and badge color category.
+
+    Returns:
+    --------
+    tuple[str, str, str | None]
+        (movement_description, css_class_key, direction_name)
+        e.g. ('Increased 4.2% vs previous day', 'positive', 'increased')
+    """
     if current is None:
         return "Daily value unavailable", "neutral", None
     if previous is None:
@@ -127,6 +209,12 @@ def _daily_movement(
 
 
 def _daily_insight(values: Mapping[str, tuple[float | None, float | None]]) -> str:
+    """
+    Synthesize natural language executive takeaways from daily movements.
+
+    Example output:
+    'Daily insight: revenue, purchase quantity increased; usage decreased.'
+    """
     movements: dict[str, list[str]] = {"increased": [], "decreased": []}
     unavailable = []
     for label in DAILY_METRIC_LABELS:
@@ -156,6 +244,7 @@ def _daily_insight(values: Mapping[str, tuple[float | None, float | None]]) -> s
 def _daily_service_html(
     service: str, values: Mapping[str, tuple[float | None, float | None]]
 ) -> str:
+    """Render a responsive HTML table card for either Data or Voice daily metrics."""
     is_voice = service == "Voice"
     accent = BRAND_DEEP_GREEN if is_voice else BRAND_GREEN
     metric_rows = []
@@ -195,7 +284,7 @@ def _daily_service_html(
 
 
 def _daily_insight_callout(daily_summary: DailySummary) -> str:
-    """Highlighted insight box shown beneath the Data and Voice daily cards."""
+    """Highlighted green callout container displaying synthesized insights for Data & Voice."""
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'style="width:100%;margin-top:8px"><tr><td style="padding:0 6px">'
@@ -221,7 +310,38 @@ def build_html_email(
     embed_images: bool = False,
     daily_summary: DailySummary | None = None,
 ) -> str:
-    """Build email-safe responsive HTML from the current report metrics."""
+    """
+    Assemble the complete responsive HTML commercial email document.
+
+    Features included in markup:
+    - Hidden preview preheader text for Outlook/mobile inbox snippet.
+    - Tricolor brand stripe (Safaricom Green, Yellow, Red).
+    - Executive title banner with linear gradient background.
+    - Daily performance cards with movement badges.
+    - Period KPI summary cards.
+    - Inline dashboard chart visual panels for Data and Voice.
+    - Official corporate email signature with footer banner image.
+
+    Parameters:
+    -----------
+    reporting_period : str
+        Human-readable date range label (e.g. '2–31 October 2026').
+    metrics : Mapping[str, Sequence[str]]
+        Dictionary containing ('Revenue', 'Purchase Quantity', 'Usage') paired with [data_str, voice_str].
+    data_dashboard : str | Path
+        Path or CID identifier for Data dashboard image.
+    voice_dashboard : str | Path
+        Path or CID identifier for Voice dashboard image.
+    embed_images : bool, default False
+        True to embed images as base64 (for browser previews); False to use cid: URLs for SMTP.
+    daily_summary : DailySummary, optional
+        Pre-aggregated DoD commercial metrics.
+
+    Returns:
+    --------
+    str
+        Full HTML5 email document string.
+    """
     _validate_metrics(metrics)
     data_src = _image_source(data_dashboard, embed=embed_images)
     voice_src = _image_source(voice_dashboard, embed=embed_images)
@@ -231,6 +351,7 @@ def build_html_email(
         content_id=FOOTER_IMAGE_CID,
     )
 
+    # Build the 3 period summary KPI cards (Revenue, Purchase Quantity, Usage)
     kpi_cards = []
     for label, accent in zip(KPI_LABELS, KPI_ACCENTS):
         data_value, voice_value = metrics[label]
@@ -284,6 +405,7 @@ def build_html_email(
             + _daily_insight_callout(daily_summary)
             + "</td></tr>"
         )
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -426,6 +548,23 @@ def build_plain_text_email(
     *,
     daily_summary: DailySummary | None = None,
 ) -> str:
+    """
+    Construct plain-text fallback content for email clients blocking HTML or terminal logs.
+
+    Parameters:
+    -----------
+    reporting_period : str
+        Human-readable date range label.
+    metrics : Mapping[str, Sequence[str]]
+        Dictionary containing ('Revenue', 'Purchase Quantity', 'Usage') paired with [data_str, voice_str].
+    daily_summary : DailySummary, optional
+        Pre-aggregated DoD commercial metrics.
+
+    Returns:
+    --------
+    str
+        Plain-text formatted summary email.
+    """
     _validate_metrics(metrics)
     lines = [
         "Unlimited Data & Voice Business Performance Report",

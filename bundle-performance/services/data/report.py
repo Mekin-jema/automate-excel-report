@@ -49,7 +49,17 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 REPORT_DIR = BASE_DIR / "reports" / "data"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-# 18 Target Bundles specification matching Excel template
+# =====================================================================
+# SAFARICOM COMMERCIAL DATA BUNDLE CATALOG SPECIFICATION
+# =====================================================================
+# Defines the canonical 18 target data bundles tracked in commercial reporting.
+# Matches the layout and row definitions in 'Unlimted Data peformance summary - Copy.xlsx'.
+# Categories:
+#   1. Gize+ (Time-based hourly unlimited data: Night, Day, Peak)
+#   2. Daily Unlimited (18GB FUP tier: Standard, Partner, Location)
+#   3. Weekly Unlimited (70GB FUP tier: Standard, Partner, Location)
+#   4. Monthly Unlimited (300GB FUP tier: Standard, Partner, Location)
+#   5. Wullo Packages (Off-peak, Night Mata, and Monthly 75GB)
 BUNDLE_SPECS = [
     # Gize+
     {"name": "CBU_TIMEBASED_UNLTD_DATA_NIGHT_1HR", "display_name": "Gize+ Night 1 Hour", "category": "Gize +", "price": 12, "validity": "Night"},
@@ -78,8 +88,13 @@ BUNDLE_SPECS = [
 
 HEADER_FILL = PatternFill(start_color="C0E4F5", end_color="C0E4F5", fill_type="solid")
 RATE_FILL = PatternFill(start_color="D5F5E3", end_color="D5F5E3", fill_type="solid")
+
+
 def clean_bundle_name(name: str) -> str:
-    """Strips numerical prefix (e.g., '01. CBU_...' -> 'CBU_...')"""
+    """
+    Strip numerical indexing prefixes from bundle names (e.g., '01. CBU_...' -> 'CBU_...').
+    Ensures seamless matching between SQL raw output and BUNDLE_SPECS catalog keys.
+    """
     if not isinstance(name, str):
         return ""
     if len(name) > 4 and name[:2].isdigit() and name[2:4] in [". ", "_ "]:
@@ -88,11 +103,23 @@ def clean_bundle_name(name: str) -> str:
 
 
 def display_bundle_name(name: str) -> str:
+    """Resolve raw bundle technical identifiers to executive-friendly display names."""
     normalized = clean_bundle_name(name)
     return next((bundle["display_name"] for bundle in BUNDLE_SPECS if bundle["name"] == normalized), "Other bundle")
 
 
 def _dashboard_purchase_formula(metric, day_ref=None, category_ref=None, bundle_ref=None, start_key=None, end_key=None):
+    """
+    Construct dynamic Excel SUMIFS formula linking dashboard KPI cells to the raw BUNDLE PURCHASE sheet.
+    
+    Parameters:
+    - metric: Target metric ('A.SUBS', 'B.QUANTITY', 'C.REVENUE').
+    - day_ref / start_key / end_key: Target date filters.
+    - category_ref / bundle_ref: Dimensional slicing filters.
+    
+    Returns:
+    - Formatted formula string, e.g. '=SUMIFS('BUNDLE PURCHASE'!$F:$F,'BUNDLE PURCHASE'!$A:$A,B4,...)'
+    """
     criteria = []
     if day_ref:
         criteria.extend(["'BUNDLE PURCHASE'!$A:$A", day_ref])
@@ -110,6 +137,10 @@ def _dashboard_purchase_formula(metric, day_ref=None, category_ref=None, bundle_
 
 
 def _dashboard_traffic_formula(day_ref=None, bundle_ref=None, start_key=None, end_key=None):
+    """
+    Construct dynamic Excel SUMIFS formula linking dashboard traffic cells to the raw TRAFFIC_DATA sheet.
+    Filters on 'USAGE' metric in column D and sums MB traffic volume from column E.
+    """
     criteria = []
     if day_ref:
         criteria.extend(["'TRAFFIC_DATA'!$B:$B", day_ref])
@@ -568,8 +599,44 @@ def create_data_excel(
     dashboard_chart_image: bytes | None = None,
 ) -> Path:
     """
-    Creates an Excel workbook matching the exact structure and styling of
-    'Unlimted Data peformance summary - Copy.xlsx'.
+    Generate the official Safaricom Multi-Tab Commercial Data Performance Excel Workbook.
+
+    Conforms precisely to 'Unlimted Data peformance summary - Copy.xlsx':
+    1. Dashboard: Executive KPI cards, daily volume & revenue trends, doughnut charts.
+    2. Summary: Portfolio-level aggregations across SUBS, QUANTITY, REVENUE, TRAFFIC, RATE.
+    3. SUBS: Distinct subscriber matrices broken down by 18 bundles and 5 categories.
+    4. QUTY: Purchase transaction quantity matrices.
+    5. REVENUE: Financial gross revenue matrices in ETB.
+    6. TRAFFIC: Data consumption matrices in Megabytes (MB).
+    7. BUNDLE PURCHASE: Full SQL purchases table (ID_DATE, BUNDLE_NAME, METRIC, VALUE).
+    8. TRAFFIC_DATA: Full SQL usage table (ID_DATE, BUNDLE_NAME, USAGE).
+    9. calculations: Dynamic formula layer driving the charts and ranking tables.
+
+    Parameters:
+    -----------
+    usage : pd.DataFrame
+        Raw data bundle usage records.
+    purchases : pd.DataFrame
+        Raw data bundle purchase records.
+    start_date : str
+        Report start date (YYYYMMDD).
+    end_date : str
+        Report end date (YYYYMMDD).
+    sample_source_date : str, optional
+        Flag note if sample test data is being substituted.
+    output_suffix : str, default ""
+        Filename suffix (e.g., '_History').
+    output_path : Path, optional
+        Target destination path for the saved .xlsx workbook.
+    dashboard_start_date / dashboard_end_date : str, optional
+        Window override for the front-page KPI cards.
+    dashboard_chart_image : bytes, optional
+        Rendered PNG chart image for embedding.
+
+    Returns:
+    --------
+    Path
+        Absolute path to the finalized, saved Excel workbook.
     """
     output_path = output_path or (
         REPORT_DIR / f"Data_Performance_{start_date}_{end_date}{output_suffix}.xlsx"
@@ -577,7 +644,7 @@ def create_data_excel(
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    # 1. Parse unique dates
+    # 1. Collect and sort all distinct dates across purchase and usage datasets
     date_keys = set()
     if not purchases.empty and "ID_DATE" in purchases.columns:
         date_keys.update(purchases["ID_DATE"].unique())
@@ -589,7 +656,7 @@ def create_data_excel(
 
     sorted_dates = sorted([parse_date_key(k) for k in date_keys])
 
-    # Sheets
+    # 2. Instantiate all executive and operational sheets in standard sequence
     ws_summary = wb.create_sheet("Summary")
     ws_subs = wb.create_sheet("SUBS")
     ws_quty = wb.create_sheet("QUTY")
@@ -599,6 +666,16 @@ def create_data_excel(
     ws_tu = wb.create_sheet("TRAFFIC_DATA")
 
     def populate_metric_sheet(ws, metric_code, metric_name, is_traffic=False):
+        """
+        Populate an individual matrix worksheet (SUBS, QUTY, REVENUE, or TRAFFIC).
+
+        Layout Structure:
+        - Columns B through E/F: Bundle catalog attributes (Name, Price, MBS, Validity, Metric).
+        - Subsequent Columns: Daily chronological dates with weekday abbreviation headers.
+        - Rows: Grouped into the 5 commercial categories with dynamic category subtotal rows.
+        - Bottom Total: Global portfolio daily sum with TOTAL_BORDER styling.
+        - Trailing Columns: ISO calendar weekly averages (e.g. Wk40, Wk41) and WoW conditional formatting.
+        """
         start_col = 7 if is_traffic else 6
         header_date_row = 3 if (is_traffic or metric_code == "C.REVENUE") else (4 if metric_code == "B.QUANTITY" else 2)
         day_row = header_date_row - 1

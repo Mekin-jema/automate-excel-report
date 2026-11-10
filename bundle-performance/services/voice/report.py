@@ -1,4 +1,22 @@
-"""Voice performance Excel report generation."""
+"""
+Voice Performance Multi-Tab Excel Report Generation Engine.
+===========================================================
+Generates the comprehensive commercial Voice performance reporting workbook for
+Safaricom Ethiopia commercial leadership.
+
+Worksheet Architecture:
+1. Dashboard: Front-page executive dashboard with 5 KPI summary tiles, daily trends,
+   category revenue doughnut charts, and top bundle bar charts.
+2. Summary: Portfolio-level indicators across dates (SUBS, QUANTITY, REVENUE, MINUTES, RATE).
+3. SUBS: Distinct subscriber matrices for voice packages.
+4. QUTY: Purchase transaction quantity matrices.
+5. REVENUE: Financial gross revenue matrices in ETB.
+6. VOICE MINUTES: Call minute consumption matrices.
+7. VOICE PURCHASE DATA: Raw normalized SQL purchases dataset.
+8. VOICE USAGE DATA: Raw normalized SQL minutes usage dataset.
+9. 5 BIRR DATA: Dedicated granular tracking for the high-volume 5 Birr package segment.
+10. voice_calculations: Hidden formula-driven engine driving the dashboard charts.
+"""
 
 from datetime import datetime
 from io import BytesIO
@@ -36,6 +54,14 @@ from services.shared.excel_formatting import (
 REPORT_DIR = Path(__file__).resolve().parents[2] / "reports" / "voice"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
+# =====================================================================
+# SAFARICOM COMMERCIAL VOICE BUNDLE CATALOG SPECIFICATION
+# =====================================================================
+# Defines the canonical 6 commercial voice bundle offerings tracked in leadership reporting:
+# - Weekly Voice: 20 ETB On-Net (700 min) & 20 ETB Combo (4,032 min)
+# - Daily Voice: 5 ETB Safari Unlimited & 5 ETB Combo (1,440 min)
+# - Hourly Voice: 2 ETB Combo (120 min)
+# - Other Voice: 1 ETB Friends & Family (24 hrs)
 VOICE_BUNDLES = [
     {
         "name": "A.20B_700MIN_WEEKLY_ONNET_VOICE",
@@ -84,9 +110,12 @@ VOICE_BUNDLES_BY_NAME = {bundle["name"]: bundle for bundle in VOICE_BUNDLES}
 
 
 def _display_voice_bundle(bundle_name):
+    # Resolve raw technical voice bundle name to executive display label
     bundle = VOICE_BUNDLES_BY_NAME.get(bundle_name)
     return bundle["display_name"] if bundle else "Other voice bundle"
 
+
+# Mapping between SQL metric codes and worksheet tab names
 METRIC_SHEETS = {
     "A.SUBS": "SUBS",
     "B.QUANTITY": "QUTY",
@@ -153,6 +182,15 @@ def _create_dashboard(
     reporting_end_date,
     dashboard_chart_image=None,
 ):
+    # Construct the executive Dashboard sheet and hidden voice_calculations sheet.
+    # Dashboard Layout:
+    # - Rows 2-4: Branded Header Banner (Green fill, white typography).
+    # - Rows 6-8: 5 Core KPI Summary Cards (Total Revenue, Subscribers, Quantity,
+    #   Voice Minutes, Minutes Per Subscriber).
+    # - Rows 10: Fair Usage Policy (FUP) disclaimer.
+    # - Rows 13-35: Embedded openpyxl visual charts (Doughnut category mix, Top Bundles,
+    #   and daily volume trends).
+    # - Linked with dynamic formulas to the hidden 'voice_calculations' worksheet.
     ws = wb.create_sheet("Dashboard", 0)
     calculations = wb.create_sheet("voice_calculations")
     title_fill = PatternFill("solid", fgColor="006341")
@@ -528,7 +566,22 @@ def create_voice_excel(
     dashboard_end_date: str | None = None,
     dashboard_chart_image: bytes | None = None,
 ) -> Path:
-    """Create a voice report with daily/ISO-week comparisons and hidden source data."""
+    """
+    Generate the official Safaricom Multi-Tab Commercial Voice Performance Excel Workbook.
+
+    Orchestrates the complete Voice reporting lifecycle:
+    1. Schema validation and normalization across purchases, call minutes, and 5 Birr datasets.
+    2. ISO-8601 calendar week grouping for automatic weekly subtotaling (Wk1, Wk2, etc.).
+    3. Sheet instantiation: Dashboard, Summary, SUBS, QUTY, REVENUE, VOICE MINUTES,
+       VOICE PURCHASE DATA, VOICE USAGE DATA, 5 BIRR DATA, and voice_calculations.
+    4. Row-level formula generation with SUM subtotals and Day-over-Day conditional formatting.
+    5. Chart generation and worksheet property optimization (print areas, gridlines).
+
+    Returns:
+    --------
+    Path
+        Path to the saved voice performance Excel workbook.
+    """
     for label, date_key in (("start_date", start_date), ("end_date", end_date)):
         if len(str(date_key)) != 8 or not str(date_key).isdigit():
             raise ValueError(f"{label} must use YYYYMMDD format.")

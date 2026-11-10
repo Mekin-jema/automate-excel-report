@@ -1,4 +1,14 @@
-"""Validate report values and render dashboard email assets."""
+"""Analytical metric validation, KPI aggregation, and visual dashboard rendering.
+
+Provides presentation and data verification services:
+1. Validates DataFrame structure, numeric ranges, and presence of mandatory metrics (SUBS, QUANTITY, REVENUE).
+2. Computes executive period totals (Revenue in ETB, Subscribers, Volume in GB/Minutes, Effective Rates).
+3. Compiles Day-over-Day (DoD) performance comparisons for executive email summaries.
+4. Renders high-resolution, branded 6-panel graphical dashboard charts using Matplotlib and Pillow.
+5. Generates standalone desktop and mobile HTML email previews.
+"""
+
+from __future__ import annotations
 
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -6,6 +16,7 @@ from pathlib import Path
 
 import matplotlib
 
+# Set non-interactive Agg backend to allow headless server execution without GUI displays
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as path_effects
@@ -23,6 +34,20 @@ def _validate_report_data(
     required_metrics: set[str],
     label: str,
 ) -> None:
+    """Verifies that query results contain valid schemas, rows, and required metrics.
+
+    Ensures that empty, truncated, or non-numeric query results immediately abort
+    the workflow before generating corrupted Excel workbooks or sending emails.
+
+    Args:
+        purchases: Purchase DataFrame (A.SUBS, B.QUANTITY, C.REVENUE).
+        usage: Traffic usage DataFrame.
+        required_metrics: Expected metric codes (e.g., {'A.SUBS', 'B.QUANTITY', 'C.REVENUE'}).
+        label: Service label ('Data' or 'Voice') for diagnostic logging.
+
+    Raises:
+        ValueError: If data is empty, improperly shaped, non-numeric, or missing metrics.
+    """
     if purchases.empty:
         raise ValueError(
             f"{label} purchase query returned no rows; email was not sent."
@@ -38,6 +63,7 @@ def _validate_report_data(
     usage_values = pd.to_numeric(usage["VALUE"], errors="coerce")
     if purchase_values.isna().all() or usage_values.isna().all():
         raise ValueError(f"{label} purchase or usage values are not numeric.")
+        
     actual_metrics = set(purchases["METRIC"].dropna().astype(str))
     missing = required_metrics - actual_metrics
     if missing:
@@ -53,6 +79,16 @@ def _kpi_metrics(
     voice_purchases: pd.DataFrame,
     voice_usage: pd.DataFrame,
 ) -> dict[str, tuple[str, str]]:
+    """Calculates aggregate commercial KPIs across Data and Voice portfolios.
+
+    Extracts:
+      - Total Revenue in ETB
+      - Total Transactions (Purchase Quantity)
+      - Total Usage Volume (GB for Data, Minutes for Voice)
+
+    Returns:
+        dict[str, tuple[str, str]]: Mapping of KPI label to (formatted_data_val, formatted_voice_val).
+    """
     def totals(
         purchases: pd.DataFrame,
         usage: pd.DataFrame,
@@ -74,10 +110,12 @@ def _kpi_metrics(
             "Usage": float(usage_values.sum()) / usage_divisor,
         }
 
+    # Data traffic in MB is converted to GB (divisor=1024); Voice minutes remain raw (divisor=1)
     data = totals(data_purchases, data_usage, usage_divisor=1024)
     voice = totals(voice_purchases, voice_usage)
 
     def format_value(label: str, value: float, *, voice_value: bool) -> str:
+        """Applies Safaricom executive number formatting and units."""
         if label == "Revenue":
             return f"{value:,.0f} ETB"
         if label in ("Bundle Subscribers", "Purchase Quantity"):
@@ -104,6 +142,22 @@ def _daily_performance_summary(
     data_covered_dates: set[str],
     voice_covered_dates: set[str],
 ) -> DailySummary:
+    """Computes daily totals for the end date and compares against T-1 (Day-over-Day).
+
+    Generates the comparison tuples needed for the responsive HTML email header card.
+
+    Args:
+        reporting_date: Target end date ('YYYYMMDD').
+        data_purchases: Data purchases DataFrame.
+        data_usage: Data usage DataFrame.
+        voice_purchases: Voice purchases DataFrame.
+        voice_usage: Voice usage DataFrame.
+        data_covered_dates: Cached dates for Data.
+        voice_covered_dates: Cached dates for Voice.
+
+    Returns:
+        DailySummary: Dictionary structured with current vs. previous metrics for Data and Voice.
+    """
     report_day = datetime.strptime(reporting_date, "%Y%m%d").date()
     previous_day = report_day - timedelta(days=1)
 
@@ -115,6 +169,7 @@ def _daily_performance_summary(
         *,
         voice: bool,
     ) -> dict[str, float | None]:
+        # If the day was not cached or loaded, return None to prevent flawed 0 values
         if day not in covered_dates:
             return {
                 "Revenue": None,
@@ -151,6 +206,7 @@ def _daily_performance_summary(
             ),
         }
 
+    # Extract T and T-1 metrics for Data and Voice
     current_data = totals(
         data_purchases,
         data_usage,
@@ -209,17 +265,43 @@ def _render_dashboard(
     purchases: pd.DataFrame,
     usage: pd.DataFrame,
 ) -> bytes:
+    """Renders a composite 6-panel high-resolution commercial dashboard image.
+
+    Panels generated:
+    1. Daily Revenue Trend (Line Chart)
+    2. Daily Purchase Quantity (Column Chart)
+    3. Daily Usage Trend (Line Chart: GB for Data, Minutes for Voice)
+    4. Revenue Mix by Category (Doughnut Chart with percentages)
+    5. Top Bundles by Revenue (Horizontal Bar Chart)
+    6. Top Bundles by Traffic / Minutes (Horizontal Bar Chart)
+
+    Composited onto a stylized Safaricom brand canvas (#F4F7F5 background, #00A859 primary).
+
+    Args:
+        image_path: Target disk path for saving the .png image.
+        service: 'Data' or 'Voice'.
+        reporting_period: Formatted period string for the header banner.
+        start_date: Start date string ('YYYYMMDD').
+        end_date: End date string ('YYYYMMDD').
+        purchases: Filtered purchase DataFrame for the period.
+        usage: Filtered usage DataFrame for the period.
+
+    Returns:
+        bytes: Raw PNG bytes for embedding in Excel workbooks or email payloads.
+    """
     if service not in {"Data", "Voice"}:
         raise ValueError(f"Unknown dashboard service: {service}")
     image_path.parent.mkdir(parents=True, exist_ok=True)
     images: list[Image.Image] = []
 
+    # 1. Validate required columns
     required_columns = {"ID_DATE", "BUNDLE_NAME", "METRIC", "VALUE"}
     if not required_columns.issubset(
         purchases.columns
     ) or not required_columns.issubset(usage.columns):
         raise ValueError(f"{service} dashboard data has an invalid shape.")
 
+    # 2. Build complete date index for consistent time-series alignment
     dates = pd.date_range(
         pd.to_datetime(start_date, format="%Y%m%d"),
         pd.to_datetime(end_date, format="%Y%m%d"),
@@ -239,6 +321,7 @@ def _render_dashboard(
     ].copy()
     usage_data = usage_data[usage_data["METRIC"] == "USAGE"].copy()
 
+    # 3. Resolve bundle display names and categories
     if service == "Voice":
         from services.voice.report import VOICE_BUNDLES_BY_NAME
 
@@ -264,6 +347,7 @@ def _render_dashboard(
         if "BUNDLE_CATEGORY" not in purchase_data:
             raise ValueError(f"{service} dashboard purchase data has no categories.")
 
+    # 4. Aggregate metrics across dimensions
     revenue_by_date = (
         purchase_data.loc[purchase_data["METRIC"] == "C.REVENUE"]
         .groupby("_DATE")["_VALUE"]
@@ -300,6 +384,7 @@ def _render_dashboard(
         .head(10)
     )
 
+    # 5. Sanity check: Ensure at least one metric is non-zero
     kpi_values = (
         revenue_by_date.sum(),
         purchase_data.loc[purchase_data["METRIC"] == "A.SUBS", "_VALUE"].sum(),
@@ -312,6 +397,7 @@ def _render_dashboard(
             "workbook will not be emailed."
         )
 
+    # 6. Define specifications for the 6 chart panels
     chart_specs = (
         (
             "Revenue Trend | ETB",
@@ -370,12 +456,16 @@ def _render_dashboard(
             "Traffic (GB)" if service == "Data" else "Minutes",
         ),
     )
+    
+    # 7. Render each panel via Matplotlib and convert to Pillow Image
     try:
         for title, chart_type, labels, values, color, axis_label in chart_specs:
             figure, axis = plt.subplots(figsize=(7.5, 3.5), dpi=120)
             try:
                 figure.patch.set_facecolor("white")
                 axis.set_facecolor("white")
+                
+                # Panel Style: Doughnut Chart
                 if chart_type == "doughnut":
                     nonzero = values[values > 0]
                     if nonzero.empty:
@@ -421,6 +511,7 @@ def _render_dashboard(
                             title="Category",
                             title_fontsize=9,
                         )
+                # Panel Style: Line or Column Time-Series
                 elif chart_type in ("line", "column"):
                     axis_labels = pd.to_datetime(labels).strftime("%d %b")
                     if chart_type == "line":
@@ -446,6 +537,7 @@ def _render_dashboard(
                     )
                     axis.grid(axis="y", linestyle="--", alpha=0.2)
                     axis.set_axisbelow(True)
+                # Panel Style: Horizontal Bar (Top 10 Bundles)
                 else:
                     display_labels = [
                         display_by_bundle.get(str(name), str(name).split(".", 1)[-1])
@@ -472,6 +564,8 @@ def _render_dashboard(
                     figure.tight_layout(rect=(0, 0, 0.68, 1))
                 else:
                     figure.tight_layout()
+                    
+                # Convert Matplotlib figure buffer into Pillow RGB Image
                 with BytesIO() as stream:
                     figure.savefig(stream, format="png", dpi=120, facecolor="white")
                     stream.seek(0)
@@ -480,6 +574,7 @@ def _render_dashboard(
             finally:
                 plt.close(figure)
 
+        # 8. Composite individual subplots into an executive 2x3 grid canvas with banner
         columns = 2
         rows = (len(images) + columns - 1) // columns
         cell_width = max(image.width for image in images)
@@ -499,12 +594,16 @@ def _render_dashboard(
             title_font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 23)
         except OSError:
             title_font = ImageFont.load_default()
+            
+        # Draw header banner text
         draw.text(
             (gap, 12),
             f"{service} Performance Dashboard | {reporting_period}",
             fill="#006341",
             font=title_font,
         )
+        
+        # Paste chart panels onto canvas grid
         for index, image in enumerate(images):
             x = gap + (index % columns) * (cell_width + gap)
             y = header_height + gap + (index // columns) * (cell_height + gap)
@@ -512,6 +611,7 @@ def _render_dashboard(
         canvas.save(image_path, format="PNG", optimize=True)
         canvas.close()
 
+        # 9. Create raw charts bytes buffer (used for embedding directly inside Excel sheets)
         charts_canvas = Image.new(
             "RGB",
             (
@@ -539,6 +639,19 @@ def _write_previews(
     start_date: str,
     end_date: str,
 ) -> tuple[Path, Path]:
+    """Saves standalone desktop and mobile HTML email previews to disk.
+
+    Allows developers and analysts to inspect the rendered email design and KPI
+    cards in any web browser without needing to trigger an actual SMTP delivery.
+
+    Args:
+        html_body: Complete HTML email payload with base64 embedded charts.
+        start_date: Reporting window start ('YYYYMMDD').
+        end_date: Reporting window end ('YYYYMMDD').
+
+    Returns:
+        tuple[Path, Path]: (desktop_preview_path, mobile_preview_path).
+    """
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
     suffix = f"{start_date}_{end_date}"
     desktop = PREVIEW_DIR / f"Performance_{suffix}_Desktop.html"

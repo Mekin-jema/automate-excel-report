@@ -1,3 +1,25 @@
+"""
+Enterprise Email Delivery Service.
+==================================
+Handles automated multi-part email compilation and transmission for Safaricom
+commercial leadership reports.
+
+Capabilities:
+1. Standards-Compliant MIME Structure:
+   - Root: multipart/mixed
+   - Alternative view: multipart/related (HTML text + inline CID dashboard charts)
+   - Fallback view: text/plain
+   - Attachments: Binary Excel (.xlsx) workbooks and optional PDFs.
+2. Secure Transport Protocols:
+   - Direct SSL (port 465) via `smtplib.SMTP_SSL`.
+   - Opportunistic STARTTLS (port 587) via `server.starttls()`.
+   - Internal unencrypted relay (port 25).
+3. Resilient Configuration:
+   - Reads parameters from .env or OS environment variables.
+   - Validates recipient syntax and deduplicates To/Cc lists.
+   - Implements a 60-second enterprise network timeout.
+"""
+
 import mimetypes
 import os
 import re
@@ -13,6 +35,12 @@ load_dotenv()
 
 
 def _env_bool(name: str, default: bool) -> bool:
+    """
+    Parse a boolean environment variable safely.
+
+    Accepts: '1', 'true', 'yes', 'on' -> True
+             '0', 'false', 'no', 'off' -> False
+    """
     value = os.getenv(name)
     if value is None:
         return default
@@ -25,6 +53,26 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _addresses(value: str, label: str) -> list[str]:
+    """
+    Extract and validate email addresses from a semicolon or comma-delimited string.
+
+    Parameters:
+    -----------
+    value : str
+        Email list string (e.g., 'user1@safaricom.et; user2@safaricom.et').
+    label : str
+        Header label for error reporting (e.g., 'To', 'Cc', 'From').
+
+    Returns:
+    --------
+    list[str]
+        List of cleaned, validated email addresses.
+
+    Raises:
+    -------
+    ValueError
+        If no valid email addresses are found or any address lacks an '@' symbol.
+    """
     addresses = [
         address
         for _, address in getaddresses([value.replace(";", ",")])
@@ -45,7 +93,42 @@ def send_smtp_email(
     html_body: str = None,
     inline_images: Mapping[str, str | Path] | None = None,
 ) -> bool:
-    """Send an email through the configured SMTP server."""
+    """
+    Assemble and dispatch an enterprise performance email via SMTP.
+
+    Parameters:
+    -----------
+    subject : str
+        Email subject line.
+    body : str
+        Plain text fallback body.
+    attachments : Sequence[str | Path]
+        File paths for Excel workbooks or reports to attach.
+    to : str, optional
+        Semicolon/comma-separated recipient email addresses.
+    cc : str, optional
+        Semicolon/comma-separated CC recipient email addresses.
+    from_email : str, optional
+        Sender email address (must match enterprise SMTP auth policy).
+    html_body : str, optional
+        Responsive HTML body content.
+    inline_images : Mapping[str, str | Path], optional
+        Dictionary mapping Content-IDs (e.g. 'data_dashboard') to image file paths.
+
+    Returns:
+    --------
+    bool
+        True if the message was accepted by the SMTP server for all recipients.
+
+    Raises:
+    -------
+    ValueError
+        If required server settings, sender addresses, or MIME relationships are invalid.
+    FileNotFoundError
+        If any attachment or inline image file cannot be found on disk.
+    RuntimeError
+        If the SMTP server refuses any recipient addresses.
+    """
     host = os.getenv("SMTP_SERVER") or os.getenv("SMTP_HOST")
     username = os.getenv("SMTP_USERNAME")
     password = os.getenv("SMTP_PASSWORD")
@@ -64,6 +147,7 @@ def send_smtp_email(
     )
     cc_recipients_value = cc or os.getenv("REPORT_EMAIL_CC")
 
+    # If no recipients are specified, abort silently
     if not to_recipients:
         return False
     if not host:
@@ -85,10 +169,13 @@ def send_smtp_email(
     if use_ssl and use_starttls:
         raise ValueError("Enable only one of SMTP_USE_SSL and SMTP_USE_STARTTLS.")
 
+    # Parse and validate recipient lists
     cc_recipients = (
         _addresses(cc_recipients_value, "Cc") if cc_recipients_value else []
     )
     to_addresses = _addresses(to_recipients, "To")
+
+    # Construct the root MIME message
     message = EmailMessage()
     message["From"] = sender
     message["To"] = to_recipients.replace(";", ",")
@@ -96,11 +183,14 @@ def send_smtp_email(
         message["Cc"] = cc_recipients_value.replace(";", ",")
     message["Subject"] = subject
     message.set_content(body)
+
+    # Attach HTML alternative part if provided
     html_part = None
     if html_body:
         message.add_alternative(html_body, subtype="html")
         html_part = message.get_payload()[-1]
 
+    # Attach standalone files (e.g. Excel workbooks, PDF exports)
     for attachment in attachments:
         path = Path(attachment)
         if not path.is_file():
@@ -114,6 +204,7 @@ def send_smtp_email(
             filename=path.name,
         )
 
+    # Embed inline images (dashboard charts, brand footers) referenced via cid: URLs
     for content_id, image_path in (inline_images or {}).items():
         if not re.fullmatch(r"[A-Za-z0-9._-]+", content_id):
             raise ValueError(f"Invalid inline image content ID: {content_id!r}")
@@ -139,8 +230,11 @@ def send_smtp_email(
             filename=path.name,
         )
 
+    # Deduplicate all recipient targets
     recipients = list(dict.fromkeys(to_addresses + cc_recipients))
     context = ssl.create_default_context() if use_ssl or use_starttls else None
+
+    # Connect and transmit
     if use_ssl:
         with smtplib.SMTP_SSL(
             host, port, timeout=60, context=context

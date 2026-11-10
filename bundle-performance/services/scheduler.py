@@ -1,7 +1,26 @@
 """
-Automated Scheduling Service for Bundle Performance Daily Reporting.
-Manages schedule configuration, run history, background scheduler thread,
-and manual/automated report generation & email dispatch.
+Automated Scheduling & Background Execution Engine.
+===================================================
+Manages automated daily report execution, background timer threads, schedule state
+persistence, and Windows Task Scheduler batch orchestration for Safaricom commercial
+reporting.
+
+Key Responsibilities:
+1. Schedule Configuration & Audit History:
+   - Persists user scheduling preferences in config/schedule_config.json.
+   - Appends run execution audit logs (timestamp, duration, status, message)
+     to config/schedule_history.json.
+2. Dynamic Date Targeting:
+   - Resolves date modes ('yesterday', 'today', 'last_7_days', 'sample_date')
+     into concrete YYYYMMDD string keys.
+3. Automated Execution Lifecycle:
+   - Fetches bundle metrics from DuckDB or Oracle.
+   - Generates formatted Excel workbook attachments.
+   - Computes commercial headline KPI highlights.
+   - Compiles and sends executive alert emails via SMTP.
+4. OS-Level Daemon & Batch Runner:
+   - Provides an in-process threaded daemon using the Python 'schedule' package.
+   - Generates Windows Task Scheduler scripts (scripts/run_scheduled_report.bat).
 """
 
 from datetime import date, datetime, timedelta
@@ -13,7 +32,7 @@ import time
 import schedule
 
 from services.data.database import load_bundle_data
-from services.data.report import create_excel
+from services.data.report import create_data_excel as create_excel
 from services.email_service import send_smtp_email
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -25,6 +44,7 @@ SCRIPTS_DIR = BASE_DIR / "scripts"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Default schedule configuration matching Safaricom business policies
 DEFAULT_CONFIG = {
     "enabled": True,
     "run_time": "08:00",
@@ -41,6 +61,17 @@ DEFAULT_CONFIG = {
 
 
 def load_schedule_config() -> dict:
+    """
+    Load persistent scheduling configuration from disk.
+
+    Merges stored JSON values with DEFAULT_CONFIG to ensure forward compatibility
+    when new configuration keys are added.
+
+    Returns:
+    --------
+    dict
+        Active schedule settings.
+    """
     if not CONFIG_FILE.exists():
         save_schedule_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG.copy()
@@ -53,12 +84,26 @@ def load_schedule_config() -> dict:
         return DEFAULT_CONFIG.copy()
 
 
-def save_schedule_config(config: dict):
+def save_schedule_config(config: dict) -> None:
+    """Persist active schedule settings to config/schedule_config.json."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 def load_schedule_history(limit: int = 50) -> list:
+    """
+    Load recent job execution audit history.
+
+    Parameters:
+    -----------
+    limit : int, default 50
+        Maximum number of recent entries to return.
+
+    Returns:
+    --------
+    list[dict]
+        Chronologically descending list of job executions.
+    """
     if not HISTORY_FILE.exists():
         return []
     try:
@@ -68,7 +113,8 @@ def load_schedule_history(limit: int = 50) -> list:
         return []
 
 
-def add_history_entry(entry: dict):
+def add_history_entry(entry: dict) -> None:
+    """Append a new job run record to the rolling execution audit log (max 100 entries)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     entries = load_schedule_history(limit=200)
     entries.insert(0, entry)
@@ -76,6 +122,15 @@ def add_history_entry(entry: dict):
 
 
 def get_target_date_keys(date_mode: str) -> tuple[str, str]:
+    """
+    Translate symbolic date modes into concrete (start_date, end_date) YYYYMMDD keys.
+
+    Modes:
+    - 'yesterday': (T-1, T-1) - Standard daily operational reporting.
+    - 'today': (T-0, T-0) - Same-day interim tracking.
+    - 'last_7_days': (T-7, T-1) - Trailing 7-day rolling window.
+    - 'sample_date': ('20261019', '20261019') - Fixed test harness baseline.
+    """
     today = date.today()
     if date_mode == "yesterday":
         target = today - timedelta(days=1)
@@ -96,7 +151,30 @@ def get_target_date_keys(date_mode: str) -> tuple[str, str]:
 
 
 def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -> dict:
-    """Executes the daily report generation and dispatch."""
+    """
+    Execute the automated end-to-end report generation and email dispatch job.
+
+    Lifecycle Steps:
+    1. Resolve target date keys based on configured date_mode.
+    2. Extract bundle performance metrics via load_bundle_data.
+    3. Generate executive multi-tab Excel report workbook.
+    4. Aggregate high-level headline metrics (Revenue, Subs, Qty, GB Traffic).
+    5. Construct branded HTML email with KPI summary table.
+    6. Dispatch email via Office 365 SMTP if send_email is enabled.
+    7. Update persistent audit history with execution duration and status.
+
+    Parameters:
+    -----------
+    config : dict, optional
+        Configuration dictionary override.
+    trigger_type : str, default 'Automated'
+        Execution trigger source ('Automated', 'Scheduled', 'Manual', 'CLI').
+
+    Returns:
+    --------
+    dict
+        Summary of the job execution result.
+    """
     start_time = time.time()
     cfg = config or load_schedule_config()
 
@@ -118,11 +196,11 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
     }
 
     try:
-        # 1. Load Data
+        # Step 1: Extract data from designated database engine
         usage, purchases, actual_src = load_bundle_data(start_k, end_k, source=source)
         entry["data_source"] = actual_src
 
-        # 2. Generate Reports
+        # Step 2: Build the executive Excel report workbook
         attachments = []
         excel_path = None
 
@@ -131,14 +209,14 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
             attachments.append(excel_path)
             entry["excel_file"] = str(excel_path.name)
 
-        # 3. Calculate Key Highlights
+        # Step 3: Compute commercial highlight KPIs
         total_rev = purchases.loc[purchases["METRIC"] == "C.REVENUE", "VALUE"].astype(float).sum()
         total_subs = purchases.loc[purchases["METRIC"] == "A.SUBS", "VALUE"].astype(float).sum()
         total_qty = purchases.loc[purchases["METRIC"] == "B.QUANTITY", "VALUE"].astype(float).sum()
         total_mb = usage["VALUE"].astype(float).sum()
         total_gb = total_mb / 1024.0
 
-        # 4. Email Dispatch
+        # Step 4: Dispatch email via SMTP if configured
         email_sent = False
         if cfg.get("send_email", False):
             subject = f"Daily Bundle Performance Report [{start_k} - {end_k}]"
@@ -230,23 +308,31 @@ def run_daily_report_job(config: dict = None, trigger_type: str = "Automated") -
     cfg["last_run_status"] = entry["status"]
     save_schedule_config(cfg)
 
-    # Save to history
+    # Save to persistent audit history
     add_history_entry(entry)
     return entry
 
 
-# Background scheduler daemon support
+# =====================================================================
+# BACKGROUND THREADED SCHEDULER DAEMON
+# =====================================================================
 _scheduler_thread = None
 _stop_event = threading.Event()
 
 
 def _scheduler_loop():
+    """Internal loop executing pending jobs every second until stop event is signaled."""
     while not _stop_event.is_set():
         schedule.run_pending()
         time.sleep(1)
 
 
-def start_scheduler_thread():
+def start_scheduler_thread() -> bool:
+    """
+    Launch the in-process background scheduling daemon thread.
+
+    Configures a daily job at cfg['run_time'] (e.g. '08:00').
+    """
     global _scheduler_thread, _stop_event
     if _scheduler_thread and _scheduler_thread.is_alive():
         return True
@@ -269,19 +355,25 @@ def start_scheduler_thread():
     return True
 
 
-def stop_scheduler_thread():
+def stop_scheduler_thread() -> None:
+    """Signal the background scheduling thread to terminate and clear active jobs."""
     global _stop_event
     _stop_event.set()
     schedule.clear()
 
 
 def is_scheduler_running() -> bool:
+    """Check if the background scheduling thread is currently active."""
     global _scheduler_thread
     return _scheduler_thread is not None and _scheduler_thread.is_alive()
 
 
 def generate_windows_batch_script() -> Path:
-    """Generates a batch script to run via Windows Task Scheduler."""
+    """
+    Generate scripts/run_scheduled_report.bat for registration in Windows Task Scheduler.
+
+    Enables enterprise unattended execution even if the Python process terminates.
+    """
     batch_file = SCRIPTS_DIR / "run_scheduled_report.bat"
     content = f"""@echo off
 REM Safaricom Bundle Performance - Automated Daily Report Batch Script
