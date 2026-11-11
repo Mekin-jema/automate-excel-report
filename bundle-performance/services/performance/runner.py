@@ -57,12 +57,17 @@ from services.voice.report import create_voice_excel
 
 
 def _configure_logging() -> None:
-    """Configures simultaneous stream (console) and rotating file logging.
-
-    Ensures full auditability of every automated pipeline execution under reports/logs/.
-    """
+    # LOG_DIR: The directory path defined earlier in your code.
+    # parents=True: Creates parent directories if they don't already exist.
+    # exist_ok=True: Prevents an error if the directory already exists
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
+        # Level	Purpose
+            # -DEBUG	Detailed information for debugging
+            # -INFO	    General application progress
+            # -WARNING	Something unexpected happened
+            # -ERROR	An operation failed
+            # -CRITICAL	A serious application failure
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=[
@@ -70,6 +75,7 @@ def _configure_logging() -> None:
             logging.FileHandler(LOG_DIR / "performance_email.log", encoding="utf-8"),
         ],
     )
+
 
 
 def _date_range(args: argparse.Namespace, source: str = "oracle") -> tuple[str, str]:
@@ -191,7 +197,7 @@ def main() -> None:
         missing_ranges = _missing_date_ranges(
             start_date,
             end_date,
-            data_covered_dates & voice_covered_dates,
+            data_covered_dates & voice_covered_dates,  # And means intersecion
         )
 
         # ---------------------------------------------------------------------
@@ -464,7 +470,7 @@ def main() -> None:
             cc=os.getenv("REPORT_EMAIL_CC"),
             from_email=os.getenv("SENDER_EMAIL") or os.getenv("EMAIL_SENDER"),
             html_body=html_body,
-            inline_images={
+            inline_images= {
                 "data_dashboard": data_image,
                 "voice_dashboard": voice_image,
                 "safaricom_email_footer": FOOTER_IMAGE,

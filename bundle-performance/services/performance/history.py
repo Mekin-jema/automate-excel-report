@@ -52,7 +52,10 @@ def _normalize_history_frame(
     # Clean numeric fields and drop incomplete rows
     if not normalized.empty:
         normalized["ID_DATE"] = pd.to_numeric(normalized["ID_DATE"], errors="coerce")
+        # coerce means ->"If you find a value that cannot be converted into a
+        # number, replace it with NaN instead of stopping the program with an error."
         normalized["VALUE"] = pd.to_numeric(normalized["VALUE"], errors="coerce")
+        # This removes rows where either ID_DATE or VALUE contains a missing value (NaN).
         normalized = normalized.dropna(subset=["ID_DATE", "VALUE"])
         normalized["ID_DATE"] = normalized["ID_DATE"].astype(int)
         
@@ -96,6 +99,7 @@ def _read_data_history(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     # 2. Normalize bundle name mapping (supports backward compatibility with legacy NCCID)
     if not purchases.empty:
         if "NCCID" in purchases:
+            # may bot be neccessary
             purchases["BUNDLE_NAME"] = purchases["NCCID"].fillna(
                 purchases.get("BUNDLE_NAME")
             )
@@ -166,6 +170,9 @@ def _combine_history(
     combined = _normalize_history_frame(combined, columns)
     
     # Deduplicate by primary key (keep='last' ensures newer fetches supersede older ones)
+#     ID_DATE	BUNDLE_NAME	METRIC	VALUE
+        # 20261101	Daily Bundle	REVENUE	10000
+        # 20261101	Daily Bundle	REVENUE	12000
     return (
         combined.drop_duplicates(subset=keys, keep="last")
         .sort_values(keys, kind="stable")
@@ -201,14 +208,6 @@ def _history_files(master: Path, pattern: str) -> list[Path]:
     """
     if master.is_file():
         return [master]
-    return sorted(
-        (
-            path
-            for path in master.parent.glob(pattern)
-            if "_angled" not in path.stem.lower()
-        ),
-        key=lambda path: path.stat().st_mtime,
-    )
 
 
 def _history_paths(source: str) -> tuple[Path, Path]:
@@ -326,7 +325,7 @@ def _load_history(source: str = "oracle") -> tuple[
     data_purchases = _combine_history(
         data_purchase_frames,
         ("ID_DATE", "BUNDLE_CATEGORY", "BUNDLE_NAME", "METRIC", "VALUE"),
-        ["ID_DATE", "BUNDLE_NAME", "METRIC"],
+        ["ID_DATE", "BUNDLE_NAME", "METRIC"], # use for sorting the data frame
     )
     data_usage = _combine_history(
         data_usage_frames,

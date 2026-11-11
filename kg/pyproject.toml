@@ -1,0 +1,31 @@
+[project]
+name = "kg"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Mekin Jemal", email = "mekinjemal999@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "black>=26.10.1",
+    "duckdb>=2.0.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
+    "oracledb>=26.1.0",
+    "pandas>=3.1.1",
+    "pillow>=13.0.0",
+    "plotly>=7.1.0",
+    "python-dotenv>=1.2.4",
+    "pywin32>=312",
+    "reportlab>=5.1.0",
+    "schedule>=1.2.2",
+]
+
+[project.scripts]
+kg = "kg:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"

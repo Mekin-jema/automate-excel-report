@@ -91,11 +91,14 @@ def format_report_period(start_date: str, end_date: str) -> str:
     - '20261019', '20261019' -> '19 October 2026'
     - '20261002', '20261031' -> '2–31 October 2026'
     - '20260928', '20261004' -> '28 Sep 2026 – 4 Oct 2026'
+        Method	    Purpose	                      Example
+        strptime()	Converts string → datetime	"20261002" → 2026-10-02 00:00:00
+        strftime()	Converts datetime → formatted string	2026-10-02 → "2 October 2026"
     """
     start = datetime.strptime(start_date, "%Y%m%d")
     end = datetime.strptime(end_date, "%Y%m%d")
     if start == end:
-        return f"{start.day} {start.strftime('%B %Y')}"
+        return f"{start.day} {start.strftime('%B %Y')}"  # "2 October 2026"
     if start.year == end.year and start.month == end.month:
         return f"{start.day}–{end.day} {start.strftime('%B %Y')}"
     return f"{start.day} {start.strftime('%b %Y')} – {end.day} {end.strftime('%b %Y')}"

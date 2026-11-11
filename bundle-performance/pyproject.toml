@@ -35,5 +35,7 @@ build-backend = "uv_build"
 module-name = "services"
 module-root = ""
 
+[tool.uv.workspace]
+
 [tool.uv]
 package = false
