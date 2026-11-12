@@ -127,7 +127,7 @@ SELECT
         ELSE 'L.Unknown'
     END AS REGION,
     L.*
-FROM TBL_DAILY_SECOND_RECHARGE_COHORT_RPT L
+FROM BETELHEM_GIRMA.TBL_DAILY_SECOND_RECHARGE_COHORT_RPT L
 WHERE L.DS_EXEC_REGION IN (
     'East Addis',
     'West Addis',
@@ -156,4 +156,18 @@ ORDER BY REGION, ACTIVATION_DATE;
 | **10 Days** | 60% | 40% |
 | **16 Days** | 70% | 50% |
 | **20 Days** | 90% | 70% |
+
+---
+
+## 6. Project Documentation Suite
+
+Comprehensive guides matching the architecture of `bundle-performance/docs` are located in the `docs/` folder:
+
+1. **[Quick Project & Operations Guide](file:///c:/Users/Mekin.Jemal/OneDrive%20-%20Safaricom%20Ethiopia/Desktop/Automation/kg/docs/PROJECT_GUIDE.md)** (`docs/PROJECT_GUIDE.md`):
+   - Fast operational guide covering setup (`uv sync`), `.env` configuration, CLI commands, output paths, and troubleshooting.
+2. **[End-to-End System Architecture & Operations Manual](file:///c:/Users/Mekin.Jemal/OneDrive%20-%20Safaricom%20Ethiopia/Desktop/Automation/kg/docs/END_TO_END_PROJECT_GUIDE.md)** (`docs/END_TO_END_PROJECT_GUIDE.md`):
+   - In-depth technical architecture, data normalization rules, 15-sheet Excel formula breakdown, MSO email mechanics, and failover mechanics.
+3. **[Enterprise Excel Automation AI Agent Blueprint](file:///c:/Users/Mekin.Jemal/OneDrive%20-%20Safaricom%20Ethiopia/Desktop/Automation/kg/docs/EXCEL_AUTOMATION_AI_AGENT_BLUEPRINT.md)** (`docs/EXCEL_AUTOMATION_AI_AGENT_BLUEPRINT.md`):
+   - Architectural framework for transforming complex SQL queries and multi-tab Excel workbooks into autonomous production pipelines.
+
 

@@ -270,7 +270,15 @@ def _build_weekly_summary_sheet(
     # Write weekly blocks (groups of 4 weeks followed by 4wk Avg)
     current_row = 4
     week_row_map = {}
-    active_block_start = current_row
+                # week_row_map = {
+                            # "WK1": 4,
+                            # "WK2": 5,
+                            # "WK3": 6,
+                            # "WK4": 7,
+                            # "WK5": 9,
+                        # }
+
+    # active_block_start = current_row
 
     for w_idx, week_name in enumerate(weeks_list):
         week_date = start_date + pd.Timedelta(days=w_idx * 7)
@@ -585,7 +593,7 @@ def generate_kg_report(
 
     # 6. 10 Regional Detail Sheets
     for region_name in CANONICAL_REGIONS:
-        sheet_name = REGION_SHEET_NAMES.get(region_name, f"2RC ({region_name})")
+        sheet_name = REGION_SHEET_NAMES.get(region_name, f"2RC ({region_name})")  # if not exis use the default name f"2RC ({region_name}) 
         df_reg_subset = df_regional[
             (df_regional["DS_EXEC_REGION"] == region_name) |
             (df_regional.get("REGION", "").str.endswith(region_name))
