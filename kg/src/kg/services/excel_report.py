@@ -515,8 +515,16 @@ def generate_kg_report(
         if w and w not in weeks_ordered:
             weeks_ordered.append(w)
 
-    df_1rc = df_national[df_national["REPORT_TYPE"] == "1st Purchase"]
-    df_2rc = df_national[df_national["REPORT_TYPE"] == "2nd Purchase"]
+    is_1rc = df_national["REPORT_TYPE"].astype(str).str.contains("1|first", case=False, regex=True)
+    is_2rc = df_national["REPORT_TYPE"].astype(str).str.contains("2|second", case=False, regex=True)
+
+    df_1rc = df_national[is_1rc]
+    df_2rc = df_national[is_2rc]
+
+    if df_2rc.empty:
+        df_2rc = df_national.copy()
+    if df_1rc.empty:
+        df_1rc = df_2rc.copy()
 
     # 1. Sheet: 1RC-Wk (National First Recharge Weekly Summary)
     ws_1rc_wk = wb.create_sheet("1RC-Wk")
@@ -566,11 +574,13 @@ def generate_kg_report(
 
     # 5. Sheet: 2RC-Wk (Divison) (Consolidated Regional Weekly Summary)
     ws_reg_wk = wb.create_sheet("2RC-Wk (Divison)")
+    reg_weeks = weeks_ordered[3:] if len(weeks_ordered) > 3 else weeks_ordered
+    reg_start_date = start_date + pd.Timedelta(days=21) if len(weeks_ordered) > 3 else start_date
     _build_regional_summary_sheet(
         ws_reg_wk,
         df_regional=df_regional,
-        weeks_list=weeks_ordered[3:], # Regional tracking starts from WK4
-        start_date=start_date + pd.Timedelta(days=21),
+        weeks_list=reg_weeks,
+        start_date=reg_start_date,
     )
 
     # 6. 10 Regional Detail Sheets

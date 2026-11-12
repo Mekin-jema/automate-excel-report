@@ -35,15 +35,13 @@ REGIONAL_TABLE = os.getenv("REGIONAL_TABLE_NAME", "TBL_DAILY_SECOND_RECHARGE_COH
 DEFAULT_SOURCE = os.getenv("KG_EMAIL_SOURCE", "duckdb")
 
 # SMTP Settings
-SMTP_SERVER = os.getenv("SMTP_SERVER", "10.3.124.24")
+SMTP_HOST = os.getenv("SMTP_HOST", "10.3.124.25")
+SMTP_SERVER = SMTP_HOST
 SMTP_PORT = int(os.getenv("SMTP_PORT", 25))
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "Mekin.Jemal@safaricom.et")
-REPORT_EMAIL_TO = os.getenv("REPORT_EMAIL_TO", "Mekin.Jemal@safaricom.et")
+EMAIL_FROM = os.getenv("EMAIL_FROM") or os.getenv("SENDER_EMAIL", "Mekin.Jemal@safaricom.et")
+SENDER_EMAIL = EMAIL_FROM
+REPORT_EMAIL_TO = os.getenv("REPORT_EMAIL_TO") or os.getenv("EMAIL_TO", "Mekin.Jemal@safaricom.et")
 REPORT_EMAIL_CC = os.getenv("REPORT_EMAIL_CC", "")
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "Mekin.Jemal@safaricom.et")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() in ("true", "1", "yes")
-SMTP_USE_STARTTLS = os.getenv("SMTP_USE_STARTTLS", "false").lower() in ("true", "1", "yes")
 
 # Brand Colors (Safaricom Visual Identity)
 BRAND_GREEN = "#00B050"

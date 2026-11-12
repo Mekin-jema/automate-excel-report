@@ -1,35 +1,47 @@
 """
-Email Dispatcher and Preview Service for KG Recharge Tracker.
-=============================================================
-Manages SMTP transport, MIME message construction, Outlook CID attachments,
-and standalone HTML preview generation.
+Email Service for KG Recharge Tracker.
+=====================================
+Sends emails through internal SMTP relay using IP-based authorization and modern EmailMessage API.
+Provides standalone HTML preview generation.
 """
 
-from email.mime.application import MIMEApplication
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from collections.abc import Mapping, Sequence
+from email.message import EmailMessage
+from email.utils import getaddresses
 import mimetypes
+import os
 from pathlib import Path
+import re
 import smtplib
+import ssl
+from dotenv import load_dotenv
 
-from config.settings import (
-    PREVIEWS_DIR,
-    REPORT_EMAIL_CC,
-    REPORT_EMAIL_TO,
-    SENDER_EMAIL,
-    SMTP_PASSWORD,
-    SMTP_PORT,
-    SMTP_SERVER,
-    SMTP_USERNAME,
-    SMTP_USE_SSL,
-    SMTP_USE_STARTTLS,
-)
-from kg.services.email_template import (
-    CHART_IMAGE_CID,
-    FOOTER_IMAGE,
-    FOOTER_IMAGE_CID,
-)
+from config.settings import PREVIEWS_DIR
+
+load_dotenv()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value.")
+
+
+def _addresses(value: str, label: str) -> list[str]:
+    addresses = [
+        address
+        for _, address in getaddresses([value.replace(";", ",")])
+        if address
+    ]
+    if not addresses or any("@" not in address for address in addresses):
+        raise ValueError(f"Valid {label} email address(es) are required.")
+    return addresses
 
 
 def save_html_previews(html_content: str, filename_prefix: str = "kg_performance_email") -> dict[str, Path]:
@@ -59,81 +71,180 @@ def save_html_previews(html_content: str, filename_prefix: str = "kg_performance
     return {"desktop": desktop_path, "mobile": mobile_path}
 
 
-def send_kg_email(
+def send_smtp_email(
     subject: str,
-    html_body: str,
-    attachment_paths: list[Path] | None = None,
-    chart_path: Path | None = None,
-    recipient_override: str | None = None,
+    body: str,
+    attachments: Sequence[str | Path],
+    to: str = None,
+    cc: str = None,
+    from_email: str = None,
+    html_body: str = None,
+    inline_images: Mapping[str, str | Path] | None = None,
 ) -> bool:
     """
-    Send the executive performance email with attachments and inline CID images via SMTP.
+    Send an email through the internal SMTP relay using IP-based authorization.
+
+    No SMTP username, password, SSL, or STARTTLS authentication is required.
+    The source machine IP must be whitelisted by the SMTP administrator.
     """
-    recipient_to = recipient_override or REPORT_EMAIL_TO
-    recipients = [r.strip() for r in recipient_to.split(",") if r.strip()]
-    cc_recipients = [r.strip() for r in REPORT_EMAIL_CC.split(",") if r.strip()]
-    all_recipients = recipients + cc_recipients
 
-    if not recipients:
-        print("[EMAIL-ERR] No recipient email specified; skipping send.")
-        return False
+    # SMTP configuration
+    host = os.getenv("SMTP_HOST", "10.3.124.25")
+    port = int(os.getenv("SMTP_PORT", "25"))
 
-    msg = MIMEMultipart("related")
-    msg["Subject"] = subject
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = ", ".join(recipients)
+    sender = (
+        from_email
+        or os.getenv("EMAIL_FROM")
+        or os.getenv("EMAIL_SENDER")
+        or os.getenv("SMTP_FROM")
+    )
+
+    to_recipients = (
+        to
+        or os.getenv("EMAIL_TO")
+        or os.getenv("EMAIL_RECIPIENTS")
+        or os.getenv("REPORT_EMAIL_TO")
+        or os.getenv("REPORT_EMAIL")
+    )
+
+    cc_recipients_value = cc or os.getenv("REPORT_EMAIL_CC")
+
+    # Validate email configuration
+    if not to_recipients:
+        raise ValueError("No email recipients configured.")
+
+    if not sender:
+        raise ValueError("EMAIL_FROM or SMTP_FROM must be configured.")
+
+    if len(_addresses(sender, "From")) != 1:
+        raise ValueError("Exactly one sender email address is required.")
+
+    if inline_images and not html_body:
+        raise ValueError("Inline images require an HTML email body.")
+
+    # Validate recipients
+    to_addresses = _addresses(to_recipients, "To")
+
+    cc_recipients = (
+        _addresses(cc_recipients_value, "Cc")
+        if cc_recipients_value
+        else []
+    )
+
+    recipients = list(dict.fromkeys(to_addresses + cc_recipients))
+
+    # Create email message
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = ", ".join(to_addresses)
+
     if cc_recipients:
-        msg["Cc"] = ", ".join(cc_recipients)
+        message["Cc"] = ", ".join(cc_recipients)
 
-    # Alternative container for HTML body
-    msg_alt = MIMEMultipart("alternative")
-    msg.attach(msg_alt)
+    message["Subject"] = subject
 
-    # Attach HTML
-    msg_alt.attach(MIMEText(html_body, "html", "utf-8"))
+    message.set_content(body)
 
-    # Attach Inline Images (CID)
-    if FOOTER_IMAGE.exists():
-        with open(FOOTER_IMAGE, "rb") as f:
-            img = MIMEImage(f.read())
-            img.add_header("Content-ID", f"<{FOOTER_IMAGE_CID}>")
-            img.add_header("Content-Disposition", "inline", filename=FOOTER_IMAGE.name)
-            msg.attach(img)
+    html_part = None
 
-    if chart_path and chart_path.exists():
-        with open(chart_path, "rb") as f:
-            img = MIMEImage(f.read())
-            img.add_header("Content-ID", f"<{CHART_IMAGE_CID}>")
-            img.add_header("Content-Disposition", "inline", filename=chart_path.name)
-            msg.attach(img)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+        html_part = message.get_payload()[-1]
 
-    # Attach Documents (.xlsx)
-    if attachment_paths:
-        for p in attachment_paths:
-            if p.exists():
-                with open(p, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=p.name)
-                    part["Content-Disposition"] = f'attachment; filename="{p.name}"'
-                    msg.attach(part)
+    # Attach files
+    for attachment in attachments:
+        path = Path(attachment)
 
-    # SMTP Dispatch
-    print(f"[EMAIL] Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}...")
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Email attachment not found: {path}"
+            )
+
+        media_type, _ = mimetypes.guess_type(path.name)
+
+        maintype, subtype = (
+            (media_type or "application/octet-stream").split("/", 1)
+        )
+
+        message.add_attachment(
+            path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=path.name,
+        )
+
+    # Attach inline images
+    for content_id, image_path in (inline_images or {}).items():
+
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", content_id):
+            raise ValueError(
+                f"Invalid inline image content ID: {content_id!r}"
+            )
+
+        if f"cid:{content_id}" not in html_body:
+            raise ValueError(
+                f"HTML body does not reference image: {content_id}"
+            )
+
+        path = Path(image_path)
+
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Inline image not found: {path}"
+            )
+
+        media_type, _ = mimetypes.guess_type(path.name)
+
+        if not media_type or not media_type.startswith("image/"):
+            raise ValueError(
+                f"Unsupported inline image type: {path.suffix}"
+            )
+
+        subtype = media_type.split("/", 1)[1]
+
+        html_part.add_related(
+            path.read_bytes(),
+            maintype="image",
+            subtype=subtype,
+            cid=f"<{content_id}>",
+            disposition="inline",
+            filename=path.name,
+        )
+
+    # Connect to internal SMTP relay
+    print(f"[SMTP] Connecting to {host}:{port} ...")
+
     try:
-        if SMTP_USE_SSL:
-            server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30)
-        else:
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30)
-            if SMTP_USE_STARTTLS:
-                server.starttls()
+        with smtplib.SMTP(host, port, timeout=60) as server:
 
-        if SMTP_USERNAME and SMTP_PASSWORD:
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.ehlo()
 
-        server.send_message(msg, from_addr=SENDER_EMAIL, to_addrs=all_recipients)
-        server.quit()
-        print(f"[EMAIL] Successfully sent report email to: {', '.join(all_recipients)}")
+            # No SMTP authentication or STARTTLS.
+            # Relay access is controlled through source IP whitelisting.
+
+            refused = server.send_message(
+                message,
+                from_addr=sender,
+                to_addrs=recipients,
+            )
+
+        if refused:
+            raise RuntimeError(
+                "SMTP server refused recipient(s): "
+                + ", ".join(sorted(refused))
+            )
+
+        print(
+            f"[SUCCESS] Email successfully accepted by SMTP relay "
+            f"for: {', '.join(recipients)}"
+        )
+
         return True
-    except Exception as e:
-        print(f"[EMAIL-ERR] Failed to send email via SMTP: {e}")
-        return False
 
+    except (smtplib.SMTPException, OSError) as exc:
+        print(f"[SMTP ERROR] Email delivery failed: {exc}")
+        raise
+
+
+# Backward-compatible alias
+send_kg_email = send_smtp_email

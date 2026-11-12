@@ -42,7 +42,10 @@ def render_kg_dashboard_charts(
     target_path = CHARTS_DIR / output_filename
 
     # Prepare National Weekly Data
-    df_2rc = df_national[df_national["REPORT_TYPE"] == "2nd Purchase"].copy()
+    is_2rc = df_national["REPORT_TYPE"].astype(str).str.contains("2|second", case=False, regex=True)
+    df_2rc = df_national[is_2rc].copy()
+    if df_2rc.empty:
+        df_2rc = df_national.copy()
     weekly_agg = df_2rc.groupby("WEEK", as_index=False).agg({
         "ACTIVATION_DATE": "min",
         "KG_BASE": "sum",

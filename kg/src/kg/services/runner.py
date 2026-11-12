@@ -6,17 +6,23 @@ Coordinates:
 2. High-fidelity 14-tab Excel report synthesis
 3. Branded graphical chart rendering
 4. Executive responsive HTML email construction
-5. Desktop/mobile preview generation and optional SMTP dispatch
+5. Desktop/mobile preview generation and internal SMTP relay dispatch
 """
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Literal
 
 from config.settings import DEFAULT_SOURCE, EXCEL_DIR
 from kg.services.database import get_national_cohort_data, get_regional_cohort_data
-from kg.services.email_service import save_html_previews, send_kg_email
-from kg.services.email_template import build_kg_performance_email
+from kg.services.email_service import save_html_previews, send_smtp_email
+from kg.services.email_template import (
+    CHART_IMAGE_CID,
+    FOOTER_IMAGE,
+    FOOTER_IMAGE_CID,
+    build_kg_performance_email,
+)
 from kg.services.excel_report import generate_kg_report
 from kg.services.visual_charts import render_kg_dashboard_charts
 
@@ -36,7 +42,7 @@ def run_kg_pipeline(
     source : str
         Data source: 'duckdb' or 'oracle'.
     send : bool
-        Whether to dispatch email via SMTP.
+        Whether to dispatch email via internal SMTP relay.
     preview_only : bool
         If True, skips SMTP delivery even if send is requested.
     recipient : str | None
@@ -97,10 +103,10 @@ def run_kg_pipeline(
     )
     previews = save_html_previews(preview_html, filename_prefix=f"kg_performance_email_{date_str}")
 
-    # 5. Email Dispatch
+    # 5. Email Dispatch via Internal SMTP Relay
     email_sent = False
     if send and not preview_only:
-        print("\n[5/5] Dispatching email via SMTP...")
+        print("\n[5/5] Dispatching email via internal SMTP relay (10.3.124.25:25)...")
         prod_html = build_kg_performance_email(
             df_national=df_national,
             df_regional=df_regional,
@@ -109,19 +115,39 @@ def run_kg_pipeline(
             embed_images=False,
         )
         subject = f"Daily Gross Add (KG) — Cohort Performance Report [{as_of_date.strftime('%d %b %Y')}]"
-        email_sent = send_kg_email(
+
+        # Construct Plain Text Fallback Body
+        is_2rc = df_national["REPORT_TYPE"].astype(str).str.contains("2|second", case=False, regex=True)
+        kg_subset = df_national[is_2rc] if is_2rc.any() else df_national
+        total_gross_adds = int(kg_subset["KG_BASE"].sum())
+        plain_body = (
+            f"Daily Gross Add (KG) — Cohort Performance Report\n"
+            f"As of: {as_of_date.strftime('%d %B %Y')}\n\n"
+            f"Total Gross Add SIMs: {total_gross_adds:,}\n"
+            f"Please find the executive 14-sheet KG Recharge Tracker workbook attached.\n"
+        )
+
+        # Prepare Inline Images for CID Attachment
+        inline_images = {}
+        if FOOTER_IMAGE.exists():
+            inline_images[FOOTER_IMAGE_CID] = FOOTER_IMAGE
+        if chart_path and chart_path.exists():
+            inline_images[CHART_IMAGE_CID] = chart_path
+
+        email_sent = send_smtp_email(
             subject=subject,
+            body=plain_body,
+            attachments=[excel_path],
+            to=recipient,
             html_body=prod_html,
-            attachment_paths=[excel_path],
-            chart_path=chart_path,
-            recipient_override=recipient,
+            inline_images=inline_images,
         )
     else:
         print("\n[5/5] Preview mode active; SMTP send skipped.")
 
     print(f"\n{'='*70}")
     print("KG RECHARGE TRACKER PIPELINE COMPLETED SUCCESSFULLY")
-    print(f"Excel Report: {excel_path}")
+    print(f"Excel Report:    {excel_path}")
     print(f"Desktop Preview: {previews['desktop']}")
     print(f"Mobile Preview:  {previews['mobile']}")
     print(f"{'='*70}\n")
@@ -134,4 +160,3 @@ def run_kg_pipeline(
         "email_sent": email_sent,
         "as_of_date": as_of_date,
     }
-

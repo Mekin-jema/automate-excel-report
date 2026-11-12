@@ -130,8 +130,14 @@ def build_kg_performance_email(
     date_str = as_of_date.strftime("%d %B %Y")
 
     # Filter 1st and 2nd Recharge
-    df_1rc = df_national[df_national["REPORT_TYPE"] == "1st Purchase"]
-    df_2rc = df_national[df_national["REPORT_TYPE"] == "2nd Purchase"]
+    is_1rc = df_national["REPORT_TYPE"].astype(str).str.contains("1|first", case=False, regex=True)
+    is_2rc = df_national["REPORT_TYPE"].astype(str).str.contains("2|second", case=False, regex=True)
+    df_1rc = df_national[is_1rc]
+    df_2rc = df_national[is_2rc]
+    if df_2rc.empty:
+        df_2rc = df_national
+    if df_1rc.empty:
+        df_1rc = df_2rc
 
     # Overall KPIs
     total_gross_adds = int(df_2rc["KG_BASE"].sum())
