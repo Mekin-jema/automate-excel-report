@@ -1,12 +1,12 @@
 {
-  "enabled": true,
-  "run_time": "11:06",
-  "data_source": "duckdb",
-  "sender_email": "Mekin.Jemal@safaricom.et",
-  "to_emails": "Mekin.Jemal@safaricom.et,",
-  "cc_emails": "",
-  "send_email": false,
-  "preview_only": true,
-  "last_run_timestamp": "2026-11-13 11:06:04",
-  "last_run_status": "SUCCESS"
+    "enabled": true,
+    "run_time": "11:37",
+    "data_source": "duckdb",
+    "sender_email": "Mekin.Jemal@safaricom.et",
+    "to_emails": "Mekin.Jemal@safaricom.et,",
+    "cc_emails": "",
+    "send_email": false,
+    "preview_only": true,
+    "last_run_timestamp": "2026-11-13 11:37:04",
+    "last_run_status": "SUCCESS"
 }

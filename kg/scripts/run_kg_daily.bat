@@ -1,4 +1,10 @@
 @echo off
-REM Safaricom KG Recharge Tracker - Automated Daily Report Batch Script
+setlocal
+
+REM KG Recharge Tracker - Daily Report Execution
+
 cd /d "C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg"
-uv run python -m kg.services.scheduler --now
+
+"C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg\.venv\Scripts\python.exe" -m kg.services.scheduler --now
+
+exit /b %ERRORLEVEL%

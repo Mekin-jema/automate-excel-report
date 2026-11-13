@@ -1,42 +1,52 @@
 [
-  {
-    "timestamp": "2026-11-13 11:06:04",
-    "trigger": "CLI",
-    "data_source": "duckdb",
-    "status": "SUCCESS",
-    "email_sent": false,
-    "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "duration_sec": 7.39
-  },
-  {
-    "timestamp": "2026-11-13 10:50:08",
-    "trigger": "CLI",
-    "data_source": "duckdb",
-    "status": "SUCCESS",
-    "email_sent": false,
-    "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "duration_sec": 10.4
-  },
-  {
-    "timestamp": "2026-11-13 10:37:41",
-    "trigger": "CLI",
-    "data_source": "duckdb",
-    "status": "SUCCESS",
-    "email_sent": false,
-    "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "duration_sec": 8.76
-  },
-  {
-    "timestamp": "2026-11-13 06:57:19",
-    "trigger": "CLI",
-    "data_source": "duckdb",
-    "status": "SUCCESS",
-    "email_sent": false,
-    "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
-    "duration_sec": 4.53
-  }
+    {
+        "timestamp": "2026-11-13 11:37:04",
+        "trigger": "Manual CLI",
+        "data_source": "duckdb",
+        "status": "SUCCESS",
+        "email_sent": false,
+        "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "message": "Report successfully generated: C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "duration_sec": 8.21
+    },
+    {
+        "timestamp": "2026-11-13 11:06:04",
+        "trigger": "CLI",
+        "data_source": "duckdb",
+        "status": "SUCCESS",
+        "email_sent": false,
+        "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "duration_sec": 7.39
+    },
+    {
+        "timestamp": "2026-11-13 10:50:08",
+        "trigger": "CLI",
+        "data_source": "duckdb",
+        "status": "SUCCESS",
+        "email_sent": false,
+        "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "duration_sec": 10.4
+    },
+    {
+        "timestamp": "2026-11-13 10:37:41",
+        "trigger": "CLI",
+        "data_source": "duckdb",
+        "status": "SUCCESS",
+        "email_sent": false,
+        "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "duration_sec": 8.76
+    },
+    {
+        "timestamp": "2026-11-13 06:57:19",
+        "trigger": "CLI",
+        "data_source": "duckdb",
+        "status": "SUCCESS",
+        "email_sent": false,
+        "excel_file": "C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "message": "Report successfully generated at C:\\Users\\Mekin.Jemal\\OneDrive - Safaricom Ethiopia\\Desktop\\Automation\\kg\\reports\\excel\\KG_Recharge_Tracker_20261110.xlsx",
+        "duration_sec": 4.53
+    }
 ]

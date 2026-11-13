@@ -1,14 +1,48 @@
-# PowerShell script to register Safaricom KG Daily Report in Windows Task Scheduler
+# KG Recharge Tracker - Windows Task Scheduler
+
+$ErrorActionPreference = "Stop"
+
 $TaskName = "Safaricom_KG_Recharge_Daily_Report"
+$ProjectPath = "C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg"
 $BatchPath = "C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg\scripts\run_kg_daily.bat"
-$RunTime = "11:06"
+$RunTime = "11:37"
 
-Write-Host "Creating Windows Scheduled Task: $TaskName at $RunTime daily..." -ForegroundColor Green
+Write-Host "Registering KG Recharge Tracker..." -ForegroundColor Green
 
-$Action = New-ScheduledTaskAction -Execute "$BatchPath"
-$Trigger = New-ScheduledTaskTrigger -Daily -At $RunTime
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+# Validate execution file
+if (-not (Test-Path $BatchPath)) {
+    throw "Batch execution file not found: $BatchPath"
+}
 
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "Automated Daily Safaricom KG Recharge Cohort Report and Email Dispatch" -Force
+# Configure task action
+$Arguments = '/c ""' + $BatchPath + '""'
 
-Write-Host "Scheduled Task registered successfully!" -ForegroundColor Green
+$Action = New-ScheduledTaskAction `
+    -Execute "$env:ComSpec" `
+    -Argument $Arguments `
+    -WorkingDirectory $ProjectPath
+
+# Configure daily trigger
+$Trigger = New-ScheduledTaskTrigger `
+    -Daily `
+    -At $RunTime
+
+# Configure execution settings
+$Settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -MultipleInstances IgnoreNew
+
+# Register or update the task
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $Action `
+    -Trigger $Trigger `
+    -Settings $Settings `
+    -Description "Automated Daily Safaricom KG Recharge Report" `
+    -Force
+
+Write-Host "Scheduled task registered successfully!" -ForegroundColor Green
+Write-Host "Task Name: $TaskName"
+Write-Host "Daily Execution: $RunTime"
