@@ -1,7 +1,7 @@
 # PowerShell script to register Safaricom KG Daily Report in Windows Task Scheduler
 $TaskName = "Safaricom_KG_Recharge_Daily_Report"
 $BatchPath = "C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg\scripts\run_kg_daily.bat"
-$RunTime = "08:00"
+$RunTime = "10:50"
 
 Write-Host "Creating Windows Scheduled Task: $TaskName at $RunTime daily..." -ForegroundColor Green
 
