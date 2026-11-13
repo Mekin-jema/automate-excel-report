@@ -60,6 +60,9 @@ TARGETS_1RC = {
     "10 days": 0.60,
     "16 Days ": 0.70,
     "20days": 0.90,
+    "30 Days":0.93,
+    "45 Days":0.95,
+    "60 Days":0.98
 }
 
 TARGETS_2RC = {
@@ -69,6 +72,9 @@ TARGETS_2RC = {
     "10 days": 0.40,
     "16 Days ": 0.50,
     "20days": 0.70,
+    "30 Days":0.8,
+    "45 Days":0.85,
+    "60 Days":0.9
 }
 
 # Canonical Regions

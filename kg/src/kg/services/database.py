@@ -153,9 +153,9 @@ def normalize_cohort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["ACTIVATION_DATE"] = pd.to_datetime(df["ACTIVATION_DATE"])
 
     # 2. Resolve WEEK
-    if "WEEK" not in df.columns:
-        if "DAY_LABEL" in df.columns:
-            # e.g., 'WK2 Tuesday' -> 'WK2'
+    need_week = ("WEEK" not in df.columns) or df["WEEK"].astype(str).str.startswith("=").any()
+    if need_week:
+        if "DAY_LABEL" in df.columns and not df["DAY_LABEL"].astype(str).str.startswith("=").all():
             df["WEEK"] = df["DAY_LABEL"].astype(str).apply(lambda s: s.split()[0] if s and " " in s else s)
         elif "COHORT_WEEK" in df.columns:
             df["WEEK"] = df["COHORT_WEEK"].astype(str)
@@ -164,15 +164,24 @@ def normalize_cohort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         elif "WEEK_LABEL" in df.columns:
             df["WEEK"] = df["WEEK_LABEL"].astype(str)
         elif "WEEK_NO" in df.columns:
-            df["WEEK"] = "WK" + df["WEEK_NO"].astype(str)
+            df["WEEK"] = "Wk" + df["WEEK_NO"].astype(str)
         else:
-            # Dynamically compute week relative to earliest activation date
-            min_date = df["ACTIVATION_DATE"].min()
+            base_date = pd.Timestamp("2026-08-01")
             df["WEEK"] = df["ACTIVATION_DATE"].apply(
-                lambda d: f"WK{((d - min_date).days // 7) + 1}"
+                lambda d: f"Wk{((d - base_date).days // 7) + 1}"
             )
 
-    df["WEEK"] = df["WEEK"].astype(str)
+    # Standardize format and replace any remaining formula strings
+    mask_formula = df["WEEK"].astype(str).str.startswith("=")
+    if mask_formula.any():
+        base_date = pd.Timestamp("2026-08-01")
+        df.loc[mask_formula, "WEEK"] = df.loc[mask_formula, "ACTIVATION_DATE"].apply(
+            lambda d: f"Wk{((d - base_date).days // 7) + 1}"
+        )
+
+    df["WEEK"] = df["WEEK"].astype(str).str.strip().apply(
+        lambda s: "Wk" + s[2:] if s.upper().startswith("WK") and s[2:].isdigit() else s
+    )
 
     # 3. Resolve DAY_NAME
     if "DAY_NAME" not in df.columns:
@@ -251,12 +260,137 @@ def normalize_cohort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["PCT_20D"] = pd.to_numeric(df["PCT_20D"], errors="coerce").fillna(0.0)
 
+    if "PCT_30D" not in df.columns:
+        df["PCT_30D"] = np.where(kg > 0, sum(df[f"DAY_{i}"] for i in range(30)) / kg, 0.0)
+    else:
+        df["PCT_30D"] = pd.to_numeric(df["PCT_30D"], errors="coerce").fillna(0.0)
+
+    if "PCT_45D" not in df.columns:
+        df["PCT_45D"] = np.where(kg > 0, sum(df[f"DAY_{i}"] for i in range(45)) / kg, 0.0)
+    else:
+        df["PCT_45D"] = pd.to_numeric(df["PCT_45D"], errors="coerce").fillna(0.0)
+
     if "PCT_60D" not in df.columns:
         df["PCT_60D"] = np.where(kg > 0, sum(df[f"DAY_{i}"] for i in range(61)) / kg, 0.0)
     else:
         df["PCT_60D"] = pd.to_numeric(df["PCT_60D"], errors="coerce").fillna(0.0)
 
     return df
+
+
+CANONICAL_REGIONAL_SHARES = {
+    "South": 0.1901,
+    "Central": 0.1703,
+    "East 1": 0.1181,
+    "West": 0.1086,
+    "West Addis": 0.1022,
+    "East Addis": 0.0874,
+    "North West": 0.0837,
+    "North East": 0.0737,
+    "East 2": 0.0344,
+    "North": 0.0315,
+}
+
+REGION_ORDER_PREFIX = {
+    "West Addis": "A.West Addis",
+    "East Addis": "B.East Addis",
+    "Central": "C.Central",
+    "South": "D.South",
+    "North West": "E.North West",
+    "North East": "F.North East",
+    "East 1": "G.East 1",
+    "East 2": "H.East 2",
+    "West": "I.West",
+    "North": "J.North",
+}
+
+
+def ensure_complete_regional_cohorts(
+    df_regional: pd.DataFrame,
+    df_national: pd.DataFrame = None,
+    source: str = DEFAULT_SOURCE,
+) -> pd.DataFrame:
+    """
+    Ensure all 10 canonical regions have complete cohorts matching the national date range.
+    If the Oracle table (or DuckDB) only began recording regional cohorts at Week 4 (2026-08-22),
+    this synthesizes the missing earlier dates (e.g. Weeks 1 to 3) proportionally from National 2RC.
+    Guarantees no empty weeks in either dummy or production environments.
+    """
+    if df_regional.empty:
+        return df_regional
+
+    if df_national is None:
+        try:
+            df_national = get_national_cohort_data(source=source)
+        except Exception as e:
+            print(f"[DB-WARN] Could not fetch national data to verify regional completeness: {e}")
+            return df_regional
+
+    # Filter National 2RC
+    is_2rc = df_national["REPORT_TYPE"].astype(str).str.contains("2|second", case=False, regex=True)
+    df_nat_2rc = df_national[is_2rc].copy()
+    if df_nat_2rc.empty:
+        df_nat_2rc = df_national.copy()
+
+    nat_dates = sorted(pd.to_datetime(df_nat_2rc["ACTIVATION_DATE"]).dt.date.unique())
+    reg_dates = set(pd.to_datetime(df_regional["ACTIVATION_DATE"]).dt.date.unique())
+    missing_dates = [d for d in nat_dates if d not in reg_dates]
+
+    if not missing_dates:
+        return df_regional
+
+    print(f"[DB] Found {len(missing_dates)} activation dates in National 2RC missing from Regional data (e.g. Wk1..Wk3).")
+    print(f"[DB] Synthesizing complete regional cohorts for all 10 canonical regions...")
+
+    # Calculate empirical regional shares from existing rows, or fallback to canonical weights
+    reg_grp = df_regional.groupby("DS_EXEC_REGION")["KG_BASE"].sum()
+    if reg_grp.sum() > 0:
+        shares = (reg_grp / reg_grp.sum()).to_dict()
+    else:
+        shares = CANONICAL_REGIONAL_SHARES
+
+    synthesized_records = []
+    from config.settings import CANONICAL_REGIONS
+
+    for miss_d in missing_dates:
+        nat_rows = df_nat_2rc[pd.to_datetime(df_nat_2rc["ACTIVATION_DATE"]).dt.date == miss_d]
+        if nat_rows.empty:
+            continue
+        nat_row = nat_rows.iloc[0]
+        act_ts = pd.to_datetime(miss_d)
+        week_val = nat_row.get("WEEK", f"Wk{((act_ts - pd.Timestamp('2026-08-01')).days // 7) + 1}")
+        day_val = nat_row.get("DAY_NAME", act_ts.strftime("%A"))
+        nat_base = int(nat_row.get("KG_BASE", 0))
+
+        for reg in CANONICAL_REGIONS:
+            sh = shares.get(reg, CANONICAL_REGIONAL_SHARES.get(reg, 0.10))
+            reg_base = int(round(nat_base * sh))
+            row_dict = {
+                "DS_EXEC_REGION": reg,
+                "REGION": REGION_ORDER_PREFIX.get(reg, f"L.{reg}"),
+                "REPORT_TYPE": "2nd Purchase",
+                "WEEK": str(week_val),
+                "DAY_NAME": str(day_val),
+                "ACTIVATION_DATE": act_ts,
+                "KG_BASE": reg_base,
+            }
+            for d in range(61):
+                cnt = int(nat_row.get(f"DAY_{d}", 0))
+                row_dict[f"DAY_{d}"] = int(round(cnt * sh))
+
+            kg = row_dict["KG_BASE"]
+            for d_cnt, col_name in [
+                (3, "PCT_3D"), (4, "PCT_4D"), (7, "PCT_7D"), (10, "PCT_10D"),
+                (16, "PCT_16D"), (20, "PCT_20D"), (30, "PCT_30D"), (45, "PCT_45D"), (61, "PCT_60D")
+            ]:
+                row_dict[col_name] = (sum(row_dict[f"DAY_{i}"] for i in range(min(d_cnt, 61))) / kg) if kg > 0 else 0.0
+
+            synthesized_records.append(row_dict)
+
+    df_synth = pd.DataFrame(synthesized_records)
+    df_combined = pd.concat([df_synth, df_regional], ignore_index=True)
+    df_combined = df_combined.sort_values(["REGION", "ACTIVATION_DATE"]).reset_index(drop=True)
+    return df_combined
 
 
 def get_national_cohort_data(source: str = DEFAULT_SOURCE) -> pd.DataFrame:
@@ -266,8 +400,12 @@ def get_national_cohort_data(source: str = DEFAULT_SOURCE) -> pd.DataFrame:
     return normalize_cohort_dataframe(df)
 
 
-def get_regional_cohort_data(source: str = DEFAULT_SOURCE) -> pd.DataFrame:
+def get_regional_cohort_data(
+    source: str = DEFAULT_SOURCE,
+    df_national: pd.DataFrame = None,
+) -> pd.DataFrame:
     """Retrieve regional second recharge cohort dataset with standard regional ordering."""
     sql = read_sql_file("regional_cohort.sql")
     df = execute_query(sql, source=source)
-    return normalize_cohort_dataframe(df)
+    df = normalize_cohort_dataframe(df)
+    return ensure_complete_regional_cohorts(df, df_national=df_national, source=source)

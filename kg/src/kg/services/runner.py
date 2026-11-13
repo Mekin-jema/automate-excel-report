@@ -62,7 +62,7 @@ def run_kg_pipeline(
     # 1. Fetch Datasets
     print("[1/5] Extracting cohort datasets...")
     df_national = get_national_cohort_data(source=source)
-    df_regional = get_regional_cohort_data(source=source)
+    df_regional = get_regional_cohort_data(source=source, df_national=df_national)
 
     if df_national.empty:
         raise ValueError("National cohort query returned no rows; aborting.")
