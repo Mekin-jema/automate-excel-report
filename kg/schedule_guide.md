@@ -1,84 +1,144 @@
-Since it is currently **10:42 AM on November 13, 2026**, you can configure your KG Recharge Tracker to run at **10:50 AM today and every day thereafter**.
+# KG Recharge Tracker – Windows Task Scheduler Guide
 
-Follow these steps.
+## 1. Overview
 
-### **Step 1. Update the schedule configuration**
+This guide explains how to configure, register, monitor, and manage automatic daily execution of the KG Recharge Tracker using Windows Task Scheduler.
 
-From your KG project directory, open:
+**Scheduled Task:** `Safaricom_KG_Recharge_Daily_Report`
 
+## 2. Navigate to the Project Directory
+
+Open PowerShell:
+
+```powershell
+cd "C:\Users\Mekin.Jemal\OneDrive - Safaricom Ethiopia\Desktop\Automation\kg"
 ```
+
+## 3. Configure the Execution Time
+
+Open the configuration file:
+
+```powershell
 notepad .\config\schedule_config.json
 ```
 
-Change:
+Update the execution time using 24-hour format:
 
-```
-"run_time": "08:00"
-```
-
-To:
-
-```
+```json
 "run_time": "10:50"
 ```
 
 Save the file.
 
-### **Step 2. Regenerate the Windows scheduling script**
+## 4. Generate Windows Scheduling Scripts
 
 Run:
 
-```
-uv run python -m kg.services.scheduler --status
+```powershell
+uv run python -m kg.services.scheduler --generate
 ```
 
-This also regenerates your `setup_task_scheduler.ps1` using the updated time.
+This generates:
 
-### **Step 3. Register the updated daily schedule**
+- `scripts/run_kg_daily.bat` – Executes the Python report pipeline.
+- `scripts/setup_task_scheduler.ps1` – Registers the Windows scheduled task.
+
+## 5. Register the Daily Schedule
 
 Run:
 
+```powershell
+.\scripts\setup_task_scheduler.ps1
 ```
-powershell -ExecutionPolicy Bypass -File ".\scripts\setup_task_scheduler.ps1"
-```
 
-This registers or updates the Windows task.
+This creates or updates the daily Windows Scheduled Task.
 
-### **Step 4. Verify the schedule**
+## 6. Verify the Schedule
 
-Run:
-
-```
+```powershell
 Get-ScheduledTask -TaskName "Safaricom_KG_Recharge_Daily_Report"
 ```
 
-Then:
+Check execution details:
 
-```
+```powershell
 Get-ScheduledTaskInfo -TaskName "Safaricom_KG_Recharge_Daily_Report" |
     Format-List LastRunTime, LastTaskResult, NextRunTime
 ```
 
-**Expected schedule**
+`LastTaskResult = 0` generally indicates successful execution.
 
-First execution
+## 7. Run Manually (Optional)
 
-Today
+Execute the report immediately:
 
-# **10:50 AM**
+```powershell
+uv run python -m kg.services.scheduler --now
+```
 
-**Frequency**
+Alternatively, trigger the registered Windows task:
 
-Daily
+```powershell
+Start-ScheduledTask -TaskName "Safaricom_KG_Recharge_Daily_Report"
+```
 
-**Next execution**
+## 8. Manage the Scheduled Task
 
-November 14, 2026
+**Disable automatic execution:**
 
-**Time**
+```powershell
+Disable-ScheduledTask -TaskName "Safaricom_KG_Recharge_Daily_Report"
+```
 
-10:50 AM
+**Re-enable automatic execution:**
 
-**Important:** Because it is currently 10:42 AM, registering the task before 10:50 AM should allow it to run today. Keep your computer powered on and ensure it can access the Oracle database.
+```powershell
+Enable-ScheduledTask -TaskName "Safaricom_KG_Recharge_Daily_Report"
+```
 
-You do not need to run `Start-ScheduledTask` manually if you want to wait for the 10:50 AM automatic execution.
+**Permanently delete the scheduled task:**
+
+```powershell
+Unregister-ScheduledTask -TaskName "Safaricom_KG_Recharge_Daily_Report" -Confirm:$false
+```
+
+## 9. View Scheduler Configuration and History
+
+```powershell
+uv run python -m kg.services.scheduler --status
+```
+
+## 10. Important Notes
+
+- Keep the computer powered on or configure appropriate wake-up settings.
+- Ensure Oracle database connectivity.
+- Ensure the Windows task has the necessary permissions.
+- Configure logon settings if execution is required while logged off.
+- Windows Task Scheduler controls execution time; Python handles report generation and delivery.
+
+## Automation Workflow
+
+```text
+schedule_config.json
+        |
+        v
+Generate Windows Scripts
+        |
+        v
+setup_task_scheduler.ps1
+        |
+        v
+Windows Task Scheduler
+        |
+        v
+run_kg_daily.bat
+        |
+        v
+Python Report Pipeline
+        |
+        v
+Excel Reports + Charts + Email
+        |
+        v
+Execution History
+```

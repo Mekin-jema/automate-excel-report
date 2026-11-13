@@ -1,40 +1,37 @@
-"""
-Automated Daily Scheduling & Background Execution Engine for KG Recharge Tracker.
-=================================================================================
-Manages automated daily report execution, background timer threads, schedule state
-persistence, and Windows Task Scheduler batch orchestration for Safaricom commercial
-reporting.
 
-Key Responsibilities:
-1. Schedule Configuration & Audit History:
-   - Persists user scheduling preferences in config/schedule_config.json.
-   - Appends run execution audit logs (timestamp, duration, status, message)
-     to config/schedule_history.json.
-2. Automated Execution Lifecycle:
-   - Fetches cohort metrics from DuckDB or Oracle.
-   - Generates 14-sheet executive formatted Excel workbook with formulas.
-   - Renders visual performance charts.
-   - Compiles and sends executive alert emails via SMTP (or saves previews).
-   - Automatically suppresses formula error alerts (Formula Omits Adjacent Cells).
-3. OS-Level Daemon & Batch Runner:
-   - Provides an in-process threaded daemon using the Python 'schedule' package.
-   - Generates Windows Task Scheduler scripts (scripts/run_kg_daily.bat and scripts/setup_task_scheduler.ps1).
+"""
+Windows Task Scheduler Integration for KG Recharge Tracker.
+============================================================
+
+Manages Windows-based daily report scheduling, configuration,
+execution history, and automated report execution.
+
+Responsibilities:
+1. Load and save scheduling configuration.
+2. Maintain report execution audit history.
+3. Execute the KG Recharge Tracker report pipeline.
+4. Generate Windows batch and PowerShell scripts.
+5. Display scheduler configuration and execution history.
+
+Scheduling is handled exclusively by Windows Task Scheduler.
 """
 
-from datetime import datetime
+import argparse
 import json
-import os
-from pathlib import Path
 import sys
-import threading
 import time
 
-# Ensure project root in sys.path
+from datetime import datetime
+from pathlib import Path
+
+# ---------------------------------------------------------
+# PROJECT PATH CONFIGURATION
+# ---------------------------------------------------------
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-import schedule
 
 from config.settings import (
     BASE_DIR,
@@ -43,17 +40,29 @@ from config.settings import (
     REPORT_EMAIL_CC,
     REPORT_EMAIL_TO,
 )
+
 from kg.services.runner import run_kg_pipeline
+
+
+# ---------------------------------------------------------
+# DIRECTORY CONFIGURATION
+# ---------------------------------------------------------
+
+BASE_DIR = Path(BASE_DIR).resolve()
 
 CONFIG_DIR = BASE_DIR / "config"
 CONFIG_FILE = CONFIG_DIR / "schedule_config.json"
 HISTORY_FILE = CONFIG_DIR / "schedule_history.json"
+
 SCRIPTS_DIR = BASE_DIR / "scripts"
 
-CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+TASK_NAME = "Safaricom_KG_Recharge_Daily_Report"
 
-# Default schedule configuration matching Safaricom business policies
+
+# ---------------------------------------------------------
+# DEFAULT CONFIGURATION
+# ---------------------------------------------------------
+
 DEFAULT_CONFIG = {
     "enabled": True,
     "run_time": "08:00",
@@ -68,60 +77,126 @@ DEFAULT_CONFIG = {
 }
 
 
+# ---------------------------------------------------------
+# DIRECTORY INITIALIZATION
+# ---------------------------------------------------------
+
+def ensure_directories() -> None:
+    """Create required configuration and script directories."""
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------
+# CONFIGURATION MANAGEMENT
+# ---------------------------------------------------------
+
 def load_schedule_config() -> dict:
-    """Load persistent scheduling configuration from disk."""
+    """Load scheduling configuration from JSON."""
+
+    ensure_directories()
+
     if not CONFIG_FILE.exists():
-        save_schedule_config(DEFAULT_CONFIG)
+        save_schedule_config(DEFAULT_CONFIG.copy())
         return DEFAULT_CONFIG.copy()
+
     try:
-        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        merged = DEFAULT_CONFIG.copy()
-        merged.update(data)
-        return merged
-    except Exception:
-        return DEFAULT_CONFIG.copy()
+        data = json.loads(
+            CONFIG_FILE.read_text(encoding="utf-8")
+        )
+
+        config = DEFAULT_CONFIG.copy()
+        config.update(data)
+
+        return config
+
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(
+            f"Unable to load schedule configuration: {exc}"
+        ) from exc
 
 
 def save_schedule_config(config: dict) -> None:
-    """Persist active schedule settings to config/schedule_config.json."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    """Save scheduling configuration to JSON."""
 
+    ensure_directories()
+
+    CONFIG_FILE.write_text(
+        json.dumps(config, indent=4),
+        encoding="utf-8",
+    )
+
+
+# ---------------------------------------------------------
+# EXECUTION HISTORY MANAGEMENT
+# ---------------------------------------------------------
 
 def load_schedule_history(limit: int = 50) -> list:
-    """Load recent job execution audit history."""
+    """Load recent report execution history."""
+
+    ensure_directories()
+
     if not HISTORY_FILE.exists():
         return []
+
     try:
-        entries = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        entries = json.loads(
+            HISTORY_FILE.read_text(encoding="utf-8")
+        )
+
         return entries[:limit]
-    except Exception:
-        return []
+
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(
+            f"Unable to load execution history: {exc}"
+        ) from exc
 
 
 def add_history_entry(entry: dict) -> None:
-    """Append a new job run record to rolling execution audit log."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    entries = load_schedule_history(limit=200)
+    """Append a report execution record to history."""
+
+    ensure_directories()
+
+    entries = load_schedule_history(limit=100)
+
     entries.insert(0, entry)
-    HISTORY_FILE.write_text(json.dumps(entries[:100], indent=2), encoding="utf-8")
+
+    HISTORY_FILE.write_text(
+        json.dumps(entries[:100], indent=4),
+        encoding="utf-8",
+    )
 
 
-def run_daily_kg_job(config: dict = None, trigger_type: str = "Automated") -> dict:
+# ---------------------------------------------------------
+# DAILY REPORT EXECUTION
+# ---------------------------------------------------------
+
+def run_daily_kg_job(
+    config: dict = None,
+    trigger_type: str = "Windows Task Scheduler",
+) -> dict:
     """
-    Execute the automated end-to-end report generation and email dispatch job.
+    Execute the KG Recharge Tracker report pipeline.
+
+    This function is triggered by Windows Task Scheduler
+    through the generated batch execution script.
     """
-    start_time = time.time()
+
+    start_time = time.perf_counter()
+
     cfg = config or load_schedule_config()
 
     source = cfg.get("data_source", DEFAULT_SOURCE)
     send = cfg.get("send_email", False)
     preview_only = cfg.get("preview_only", not send)
 
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     entry = {
-        "timestamp": timestamp_str,
+        "timestamp": timestamp,
         "trigger": trigger_type,
         "data_source": source,
         "status": "RUNNING",
@@ -132,166 +207,265 @@ def run_daily_kg_job(config: dict = None, trigger_type: str = "Automated") -> di
     }
 
     try:
-        print(f"\n[SCHEDULER] Triggering daily report pipeline ({trigger_type})...")
-        res = run_kg_pipeline(
+        print(
+            "\n[SCHEDULER] Starting KG Recharge Tracker report..."
+        )
+
+        result = run_kg_pipeline(
             source=source,
             send=send,
             preview_only=preview_only,
         )
 
         entry["status"] = "SUCCESS"
-        entry["excel_file"] = str(res.get("excel_path", ""))
-        entry["email_sent"] = res.get("email_sent", False)
-        entry["message"] = f"Report successfully generated at {res.get('excel_path', '')}"
-        print(f"[SCHEDULER] Daily job finished successfully in {round(time.time() - start_time, 2)}s.")
+        entry["excel_file"] = str(
+            result.get("excel_path", "")
+        )
+        entry["email_sent"] = result.get(
+            "email_sent", False
+        )
 
-    except Exception as e:
+        entry["message"] = (
+            f"Report successfully generated: "
+            f"{result.get('excel_path', '')}"
+        )
+
+        print("[SCHEDULER] Report completed successfully.")
+
+    except Exception as exc:
+
         entry["status"] = "FAILED"
-        entry["message"] = f"Execution error: {str(e)}"
-        print(f"[SCHEDULER-ERROR] Daily job failed: {e}")
+        entry["message"] = str(exc)
 
-    entry["duration_sec"] = round(time.time() - start_time, 2)
+        print(f"[SCHEDULER-ERROR] {exc}")
 
-    # Update config status
-    cfg["last_run_timestamp"] = timestamp_str
-    cfg["last_run_status"] = entry["status"]
-    save_schedule_config(cfg)
+    finally:
 
-    # Save to persistent audit history
-    add_history_entry(entry)
+        entry["duration_sec"] = round(
+            time.perf_counter() - start_time,
+            2,
+        )
+
+        cfg["last_run_timestamp"] = timestamp
+        cfg["last_run_status"] = entry["status"]
+
+        save_schedule_config(cfg)
+        add_history_entry(entry)
+
     return entry
 
 
-# =====================================================================
-# BACKGROUND THREADED SCHEDULER DAEMON
-# =====================================================================
-_scheduler_thread = None
-_stop_event = threading.Event()
-
-
-def _scheduler_loop():
-    """Internal loop executing pending jobs every second until stop event is signaled."""
-    while not _stop_event.is_set():
-        schedule.run_pending()
-        time.sleep(1)
-
-
-def start_scheduler_thread() -> bool:
-    """
-    Launch the in-process background scheduling daemon thread.
-    Configures a daily job at cfg['run_time'] (e.g. '08:00').
-    """
-    global _scheduler_thread, _stop_event
-    if _scheduler_thread and _scheduler_thread.is_alive():
-        return True
-
-    cfg = load_schedule_config()
-    if not cfg.get("enabled", True):
-        print("[SCHEDULER] Scheduling is disabled in config.")
-        return False
-
-    schedule.clear()
-    run_time = cfg.get("run_time", "08:00")
-
-    def job():
-        run_daily_kg_job(trigger_type="Scheduled")
-
-    schedule.every().day.at(run_time).do(job)
-
-    _stop_event.clear()
-    _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True)
-    _scheduler_thread.start()
-    print(f"[SCHEDULER] Daemon started. Next run scheduled daily at {run_time}.")
-    return True
-
-
-def stop_scheduler_thread() -> None:
-    """Signal background scheduling thread to terminate."""
-    global _stop_event
-    _stop_event.set()
-    schedule.clear()
-    print("[SCHEDULER] Daemon stopped.")
-
-
-def is_scheduler_running() -> bool:
-    """Check if the background scheduling thread is currently active."""
-    global _scheduler_thread
-    return _scheduler_thread is not None and _scheduler_thread.is_alive()
-
+# ---------------------------------------------------------
+# WINDOWS BATCH SCRIPT GENERATION
+# ---------------------------------------------------------
 
 def generate_windows_batch_script() -> Path:
     """
-    Generate scripts/run_kg_daily.bat for registration in Windows Task Scheduler.
-    Enables enterprise unattended daily execution at OS level.
+    Generate the batch file executed by Windows Task Scheduler.
+
+    Uses the Python interpreter running this module instead
+    of relying on the Windows PATH to locate uv.
     """
+
+    ensure_directories()
+
     batch_file = SCRIPTS_DIR / "run_kg_daily.bat"
+
+    python_executable = Path(sys.executable).resolve()
+
     content = f"""@echo off
-REM Safaricom KG Recharge Tracker - Automated Daily Report Batch Script
+setlocal
+
+REM KG Recharge Tracker - Daily Report Execution
+
 cd /d "{BASE_DIR}"
-uv run python -m kg.services.scheduler --now
+
+"{python_executable}" -m kg.services.scheduler --now
+
+exit /b %ERRORLEVEL%
 """
-    batch_file.write_text(content, encoding="utf-8")
+
+    batch_file.write_text(
+        content,
+        encoding="utf-8",
+    )
+
     return batch_file
 
 
+# ---------------------------------------------------------
+# WINDOWS TASK SCHEDULER POWERSHELL GENERATION
+# ---------------------------------------------------------
+
 def generate_task_scheduler_ps1() -> Path:
     """
-    Generate PowerShell registration script for Windows Task Scheduler.
-    """
-    ps1_file = SCRIPTS_DIR / "setup_task_scheduler.ps1"
-    batch_path = SCRIPTS_DIR / "run_kg_daily.bat"
-    cfg = load_schedule_config()
-    run_time = cfg.get("run_time", "08:00")
+    Generate PowerShell script for Windows Task Scheduler.
 
-    content = f"""# PowerShell script to register Safaricom KG Daily Report in Windows Task Scheduler
-$TaskName = "Safaricom_KG_Recharge_Daily_Report"
-$BatchPath = "{batch_path}"
+    Registers or updates the daily scheduled task.
+    """
+
+    ensure_directories()
+
+    ps1_file = SCRIPTS_DIR / "setup_task_scheduler.ps1"
+
+    batch_file = SCRIPTS_DIR / "run_kg_daily.bat"
+
+    config = load_schedule_config()
+
+    run_time = config.get(
+        "run_time",
+        DEFAULT_CONFIG["run_time"],
+    )
+
+    content = f"""# KG Recharge Tracker - Windows Task Scheduler
+
+$ErrorActionPreference = "Stop"
+
+$TaskName = "{TASK_NAME}"
+$ProjectPath = "{BASE_DIR}"
+$BatchPath = "{batch_file}"
 $RunTime = "{run_time}"
 
-Write-Host "Creating Windows Scheduled Task: $TaskName at $RunTime daily..." -ForegroundColor Green
+Write-Host "Registering KG Recharge Tracker..." -ForegroundColor Green
 
-$Action = New-ScheduledTaskAction -Execute "$BatchPath"
-$Trigger = New-ScheduledTaskTrigger -Daily -At $RunTime
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+# Validate execution file
+if (-not (Test-Path $BatchPath)) {{
+    throw "Batch execution file not found: $BatchPath"
+}}
 
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Description "Automated Daily Safaricom KG Recharge Cohort Report and Email Dispatch" -Force
+# Configure task action
+$Arguments = '/c ""' + $BatchPath + '""'
 
-Write-Host "Scheduled Task registered successfully!" -ForegroundColor Green
+$Action = New-ScheduledTaskAction `
+    -Execute "$env:ComSpec" `
+    -Argument $Arguments `
+    -WorkingDirectory $ProjectPath
+
+# Configure daily trigger
+$Trigger = New-ScheduledTaskTrigger `
+    -Daily `
+    -At $RunTime
+
+# Configure execution settings
+$Settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -MultipleInstances IgnoreNew
+
+# Register or update the task
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $Action `
+    -Trigger $Trigger `
+    -Settings $Settings `
+    -Description "Automated Daily Safaricom KG Recharge Report" `
+    -Force
+
+Write-Host "Scheduled task registered successfully!" -ForegroundColor Green
+Write-Host "Task Name: $TaskName"
+Write-Host "Daily Execution: $RunTime"
 """
-    ps1_file.write_text(content, encoding="utf-8")
+
+    ps1_file.write_text(
+        content,
+        encoding="utf-8",
+    )
+
     return ps1_file
 
 
-if __name__ == "__main__":
-    import argparse
+# ---------------------------------------------------------
+# SCHEDULER STATUS
+# ---------------------------------------------------------
 
-    parser = argparse.ArgumentParser(description="KG Recharge Tracker Daily Scheduler")
-    parser.add_argument("--now", action="store_true", help="Run report job immediately")
-    parser.add_argument("--daemon", action="store_true", help="Start continuous scheduler daemon")
-    parser.add_argument("--status", action="store_true", help="Display scheduler configuration and recent history")
+def display_scheduler_status() -> None:
+    """Display configuration and recent execution history."""
+
+    config = load_schedule_config()
+
+    history = load_schedule_history(limit=5)
+
+    print("\n" + "=" * 65)
+    print("KG RECHARGE TRACKER - WINDOWS SCHEDULER STATUS")
+    print("=" * 65)
+
+    print("\nSCHEDULE CONFIGURATION")
+    print(json.dumps(config, indent=4))
+
+    print("\nRECENT EXECUTIONS")
+    print(json.dumps(history, indent=4))
+
+    print("\nWINDOWS TASK")
+    print(f"Task Name: {TASK_NAME}")
+
+    print("\n" + "=" * 65)
+
+
+# ---------------------------------------------------------
+# COMMAND LINE INTERFACE
+# ---------------------------------------------------------
+
+def main() -> None:
+    """Handle scheduler command-line operations."""
+
+    parser = argparse.ArgumentParser(
+        description="KG Recharge Tracker Windows Task Scheduler"
+    )
+
+    parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Execute the report immediately.",
+    )
+
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Display configuration and execution history.",
+    )
+
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Generate Windows batch and PowerShell scripts.",
+    )
+
     args = parser.parse_args()
 
-    # Ensure batch and ps1 scripts exist
-    generate_windows_batch_script()
-    generate_task_scheduler_ps1()
-
     if args.now:
-        print("[CLI] Running KG Recharge Tracker daily report job now...")
-        res = run_daily_kg_job(trigger_type="CLI")
-        print("\nJob Result:\n", json.dumps(res, indent=2))
+
+        print("[CLI] Starting immediate report execution...")
+
+        result = run_daily_kg_job(
+            trigger_type="Manual CLI",
+        )
+
+        print("\nJOB RESULT")
+        print(json.dumps(result, indent=4))
+
+        if result["status"] == "FAILED":
+            sys.exit(1)
+
     elif args.status:
-        cfg = load_schedule_config()
-        hist = load_schedule_history(limit=5)
-        print("Schedule Configuration:\n", json.dumps(cfg, indent=2))
-        print("\nRecent Executions:\n", json.dumps(hist, indent=2))
-    elif args.daemon:
-        cfg = load_schedule_config()
-        print(f"Starting continuous daemon loop (daily at {cfg.get('run_time', '08:00')}). Press Ctrl+C to exit.")
-        start_scheduler_thread()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            stop_scheduler_thread()
+
+        display_scheduler_status()
+
+    elif args.generate:
+
+        batch_file = generate_windows_batch_script()
+
+        ps1_file = generate_task_scheduler_ps1()
+
+        print("\nWindows scripts generated successfully.")
+
+        print(f"Batch File: {batch_file}")
+        print(f"PowerShell File: {ps1_file}")
+
     else:
+
         parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
